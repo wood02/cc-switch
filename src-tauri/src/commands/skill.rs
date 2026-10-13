@@ -7,8 +7,9 @@
 use crate::app_config::{AppType, InstalledSkill, UnmanagedSkill};
 use crate::error::format_skill_error;
 use crate::services::skill::{
-    DiscoverableSkill, ImportSkillSelection, MigrationResult, Skill, SkillBackupEntry, SkillRepo,
-    SkillService, SkillStorageLocation, SkillUninstallResult, SkillUpdateInfo,
+    DiscoverableSkill, ImportSkillSelection, MigrationResult, Skill, SkillBackupEntry,
+    SkillDocument, SkillDocumentSaveResult, SkillRepo, SkillService, SkillStorageLocation,
+    SkillUninstallResult, SkillUpdateInfo, SkillsShLeaderboardResult, SkillsShLeaderboardView,
     SkillsShSearchResult,
 };
 use crate::store::AppState;
@@ -30,6 +31,30 @@ fn parse_app_type(app: &str) -> Result<AppType, String> {
 #[tauri::command]
 pub fn get_installed_skills(app_state: State<'_, AppState>) -> Result<Vec<InstalledSkill>, String> {
     SkillService::get_all_installed(&app_state.db).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn read_skill_document(
+    id: String,
+    app_state: State<'_, AppState>,
+) -> Result<SkillDocument, String> {
+    SkillService::read_skill_document(&app_state.db, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_skill_document(
+    id: String,
+    content: String,
+    expected_revision: String,
+    app_state: State<'_, AppState>,
+) -> Result<SkillDocumentSaveResult, String> {
+    let db = app_state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        SkillService::save_skill_document(&db, &id, &content, &expected_revision)
+    })
+    .await
+    .map_err(|e| format!("保存 SKILL.md 失败: {e}"))?
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -174,6 +199,16 @@ pub async fn search_skills_sh(
     offset: usize,
 ) -> Result<SkillsShSearchResult, String> {
     SkillService::search_skills_sh(&query, limit, offset)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_skills_sh_leaderboard(
+    view: SkillsShLeaderboardView,
+    page: usize,
+) -> Result<SkillsShLeaderboardResult, String> {
+    SkillService::get_skills_sh_leaderboard(view, page)
         .await
         .map_err(|e| e.to_string())
 }

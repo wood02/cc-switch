@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Loader2,
   Search,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ import {
   type SkillUpdateInfo,
 } from "@/hooks/useSkills";
 import type { AppId } from "@/lib/api/types";
+import type { VisibleApps } from "@/types";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { settingsApi, skillsApi } from "@/lib/api";
@@ -40,6 +42,7 @@ import { AppToggleGroup } from "@/components/common/AppToggleGroup";
 import { ListItemRow } from "@/components/common/ListItemRow";
 import { ManagementListSearch } from "@/components/common/ManagementListSearch";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SkillDocumentPanel } from "./SkillDocumentPanel";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +57,7 @@ const IMPORT_SKILLS_APP_IDS = SKILLS_APP_IDS.filter((app) => app !== "pi");
 interface UnifiedSkillsPanelProps {
   onOpenDiscovery: () => void;
   currentApp: AppId;
+  visibleApps?: VisibleApps;
   onInteractionBlockedChange?: (blocked: boolean) => void;
   onNavigationBlockedChange?: (blocked: boolean) => void;
   onCheckUpdatesStateChange?: (state: SkillsCheckUpdatesState) => void;
@@ -86,6 +90,7 @@ const UnifiedSkillsPanel = React.forwardRef<
   const {
     onOpenDiscovery,
     currentApp,
+    visibleApps,
     onInteractionBlockedChange,
     onNavigationBlockedChange,
     onCheckUpdatesStateChange,
@@ -101,6 +106,7 @@ const UnifiedSkillsPanel = React.forwardRef<
   } | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
+  const [previewSkill, setPreviewSkill] = useState<InstalledSkill | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [writePending, setWritePending] = useState(false);
   const writeLockRef = React.useRef(false);
@@ -129,8 +135,15 @@ const UnifiedSkillsPanel = React.forwardRef<
   } = useCheckSkillUpdates();
   const updateSkillMutation = useUpdateSkill();
   const [isUpdatingAll, setIsUpdatingAll] = useState(false);
-  const visibleSkillAppIds =
-    currentApp === "pi" ? SKILLS_APP_IDS : IMPORT_SKILLS_APP_IDS;
+  const visibleSkillAppIds = visibleApps
+    ? SKILLS_APP_IDS.filter((app) =>
+        app === "claude"
+          ? visibleApps.claude || visibleApps["claude-desktop"]
+          : visibleApps[app],
+      )
+    : currentApp === "pi"
+      ? SKILLS_APP_IDS
+      : IMPORT_SKILLS_APP_IDS;
 
   const mutationPending =
     deleteBackupMutation.isPending ||
@@ -143,7 +156,10 @@ const UnifiedSkillsPanel = React.forwardRef<
     updateSkillMutation.isPending ||
     isUpdatingAll;
   const dialogOpen =
-    importDialogOpen || restoreDialogOpen || confirmDialog !== null;
+    importDialogOpen ||
+    restoreDialogOpen ||
+    confirmDialog !== null ||
+    previewSkill !== null;
   const navigationBlocked = writePending || mutationPending || dialogOpen;
   const interactionBlocked = navigationBlocked || isCheckingUpdates;
 
@@ -710,6 +726,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                     appIds={visibleSkillAppIds}
                     onToggleApp={handleToggleApp}
                     onUninstall={() => handleUninstall(skill)}
+                    onPreview={() => setPreviewSkill(skill)}
                     onUpdate={() => handleUpdateSkill(skill)}
                     isLast={index === filteredSkills.length - 1}
                   />
@@ -737,9 +754,18 @@ const UnifiedSkillsPanel = React.forwardRef<
       {importDialogOpen && unmanagedSkills && (
         <ImportSkillsDialog
           skills={unmanagedSkills}
+          appIds={visibleSkillAppIds.filter((app) => app !== "pi")}
           isImporting={importMutation.isPending}
           onImport={handleImport}
           onClose={() => setImportDialogOpen(false)}
+        />
+      )}
+
+      {previewSkill && (
+        <SkillDocumentPanel
+          key={previewSkill.id}
+          skill={previewSkill}
+          onClose={() => setPreviewSkill(null)}
         />
       )}
 
@@ -767,6 +793,7 @@ interface InstalledSkillListItemProps {
   actionsDisabled?: boolean;
   onToggleApp: (id: string, app: AppId, enabled: boolean) => void;
   onUninstall: () => void;
+  onPreview: () => void;
   onUpdate?: () => void;
   isLast?: boolean;
 }
@@ -779,6 +806,7 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   actionsDisabled,
   onToggleApp,
   onUninstall,
+  onPreview,
   onUpdate,
   isLast,
 }) => {
@@ -846,9 +874,21 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
       />
 
       <div
-        className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
         style={hasUpdate ? { opacity: 1 } : undefined}
       >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          disabled={actionsDisabled}
+          onClick={onPreview}
+          title={t("skills.document.open", { name: skill.name })}
+          aria-label={t("skills.document.open", { name: skill.name })}
+        >
+          <Eye size={14} />
+        </Button>
         {hasUpdate && onUpdate && (
           <Button
             type="button"
@@ -886,6 +926,7 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
 };
 
 interface ImportSkillsDialogProps {
+  appIds: AppId[];
   skills: Array<{
     directory: string;
     name: string;
@@ -1026,6 +1067,7 @@ const RestoreSkillsDialog: React.FC<RestoreSkillsDialogProps> = ({
 };
 
 const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
+  appIds,
   skills,
   isImporting,
   onImport,
@@ -1144,7 +1186,7 @@ const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
                           },
                         }));
                       }}
-                      appIds={IMPORT_SKILLS_APP_IDS}
+                      appIds={appIds}
                     />
                   </div>
                   <div

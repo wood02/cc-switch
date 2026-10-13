@@ -722,7 +722,11 @@
       "geminiDesc": "Google Gemini CLI",
       "opencodeDesc": "OpenCode CLI",
       "showProfileSwitcher": "Show project switcher",
-      "showProfileSwitcherDescription": "Show the project switcher in the main page header"
+      "showProfileSwitcherDescription": "Show the project switcher in the main page header",
+      "openSkillsOnStartup": "Open Skills on startup",
+      "openSkillsOnStartupDescription": "Automatically open the Skills page on the next app launch",
+      "skillsFollowVisibleApps": "Skills follows the main-page app selection",
+      "skillsFollowVisibleAppsDescription": "Show only selected apps with Skills support; keep skills and enabled states"
     },
     "skillStorage": {
       "title": "Skill Storage Location",
@@ -2491,6 +2495,23 @@
     }
   },
   "skills": {
+    "document": {
+      "retry": "Retry",
+      "open": "Preview/edit {{name}}",
+      "title": "{{name}} · SKILL.md",
+      "mode": "Content view",
+      "preview": "Preview",
+      "edit": "Edit",
+      "unsaved": "Unsaved changes",
+      "loadFailed": "Could not read SKILL.md",
+      "saveFailed": "Could not save SKILL.md",
+      "saved": "SKILL.md saved and synced",
+      "syncPartial": "SKILL.md saved, but some apps could not be synced",
+      "updateWarning": "Updating this Skill from its repository will overwrite local edits.",
+      "discardTitle": "Discard changes?",
+      "discardMessage": "Your changes have not been saved and will be lost when you go back.",
+      "discard": "Discard changes"
+    },
     "manage": "Skills",
     "title": "Skills Management",
     "description": "Discover and install skills from popular repositories to extend Claude Code/Codex/Gemini capabilities",
@@ -2592,7 +2613,16 @@
       "skillssh": "skills.sh"
     },
     "skillssh": {
-      "searchPlaceholder": "Search skills.sh (min 2 chars)...",
+      "searchPlaceholder": "Search skills.sh (optional, min 2 chars)...",
+      "sortLabel": "Leaderboard sort",
+      "sortAllTime": "Total installs",
+      "sortTrending": "Trending (24h)",
+      "sortHot": "Hot",
+      "leaderboardLoading": "Loading the public leaderboard...",
+      "leaderboardEmpty": "No installable skills in this leaderboard",
+      "leaderboardError": "Failed to load the public leaderboard",
+      "retry": "Retry",
+      "searchSortHint": "Search results are ranked by relevance. Clear the search to return to the leaderboard.",
       "installs": "{{count}} installs",
       "loadMore": "Load More",
       "loading": "Searching skills.sh...",

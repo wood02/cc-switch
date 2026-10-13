@@ -1,6 +1,7 @@
 import {
   useMutation,
   useQuery,
+  useInfiniteQuery,
   useQueryClient,
   keepPreviousData,
 } from "@tanstack/react-query";
@@ -12,6 +13,7 @@ import {
   type InstalledSkill,
   type SkillUpdateInfo,
   type SkillsShSearchResult,
+  type SkillsShLeaderboardView,
 } from "@/lib/api/skills";
 import type { AppId } from "@/lib/api/types";
 import { mergeImportedSkills } from "@/hooks/useSkills.helpers";
@@ -367,13 +369,30 @@ export function useSearchSkillsSh(
   query: string,
   limit: number,
   offset: number,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ["skills", "skillssh", query, limit, offset],
     queryFn: () => skillsApi.searchSkillsSh(query, limit, offset),
-    enabled: query.length >= 2,
+    enabled: enabled && query.length >= 2,
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+  });
+}
+
+export function useSkillsShLeaderboard(
+  view: SkillsShLeaderboardView,
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: ["skills", "skillssh-leaderboard", view],
+    queryFn: ({ pageParam }) =>
+      skillsApi.getSkillsShLeaderboard(view, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _pages, pageParam) =>
+      lastPage.hasMore ? pageParam + 1 : undefined,
+    enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

@@ -50,6 +50,19 @@ export interface SkillUninstallResult {
   piCleanupIncomplete?: boolean;
 }
 
+export interface SkillDocument {
+  content: string;
+  revision: string;
+  path: string;
+}
+
+export interface SkillDocumentSaveResult {
+  document: SkillDocument;
+  skill: InstalledSkill;
+  backupPath: string;
+  syncErrors: string[];
+}
+
 export interface SkillBackupEntry {
   backupId: string;
   backupPath: string;
@@ -131,6 +144,14 @@ export interface SkillsShSearchResult {
   query: string;
 }
 
+export type SkillsShLeaderboardView = "all-time" | "trending" | "hot";
+
+export interface SkillsShLeaderboardResult {
+  skills: SkillsShDiscoverableSkill[];
+  totalCount: number;
+  hasMore: boolean;
+}
+
 /** 仓库配置 */
 export interface SkillRepo {
   owner: string;
@@ -142,6 +163,21 @@ export interface SkillRepo {
 // ========== API ==========
 
 export const skillsApi = {
+  async readDocument(id: string): Promise<SkillDocument> {
+    return await invoke("read_skill_document", { id });
+  },
+
+  async saveDocument(
+    id: string,
+    content: string,
+    expectedRevision: string,
+  ): Promise<SkillDocumentSaveResult> {
+    return await invoke("save_skill_document", {
+      id,
+      content,
+      expectedRevision,
+    });
+  },
   // ========== 统一管理 API (v3.10.0+) ==========
 
   /** 获取所有已安装的 Skills */
@@ -226,6 +262,13 @@ export const skillsApi = {
     offset: number,
   ): Promise<SkillsShSearchResult> {
     return await invoke("search_skills_sh", { query, limit, offset });
+  },
+
+  async getSkillsShLeaderboard(
+    view: SkillsShLeaderboardView,
+    page: number,
+  ): Promise<SkillsShLeaderboardResult> {
+    return await invoke("get_skills_sh_leaderboard", { view, page });
   },
 
   // ========== 兼容旧 API ==========

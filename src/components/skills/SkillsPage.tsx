@@ -33,12 +33,14 @@ import {
   useAddSkillRepo,
   useRemoveSkillRepo,
   useSearchSkillsSh,
+  useSkillsShLeaderboard,
 } from "@/hooks/useSkills";
 import type { AppId } from "@/lib/api/types";
 import type {
   DiscoverableSkill,
   SkillRepo,
   SkillsShDiscoverableSkill,
+  SkillsShLeaderboardView,
 } from "@/lib/api/skills";
 import { formatSkillError } from "@/lib/errors/skillErrorParser";
 
@@ -101,7 +103,10 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     >("all");
 
     // skills.sh 搜索状态
-    const [searchSource, setSearchSource] = useState<SkillsPageSource>("repos");
+    const [searchSource, setSearchSource] =
+      useState<SkillsPageSource>("skillssh");
+    const [leaderboardView, setLeaderboardView] =
+      useState<SkillsShLeaderboardView>("all-time");
     const [skillsShInput, setSkillsShInput] = useState("");
     const [skillsShQuery, setSkillsShQuery] = useState("");
     const [skillsShOffset, setSkillsShOffset] = useState(0);
@@ -122,13 +127,51 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     const { data: installedSkills } = useInstalledSkills();
     const { data: repos = [], refetch: refetchRepos } = useSkillRepos();
 
+    const loading =
+      searchSource === "repos" && (loadingDiscoverable || fetchingDiscoverable);
+    const effectiveSource =
+      searchSource === "repos" && repos.length === 0 && !loading
+        ? "skillssh"
+        : searchSource;
+    const browsingLeaderboard = skillsShQuery.length === 0;
+    const leaderboard = useSkillsShLeaderboard(
+      leaderboardView,
+      effectiveSource === "skillssh" && browsingLeaderboard,
+    );
+
     // skills.sh 搜索
     const {
       data: skillsShResult,
       isLoading: loadingSkillsSh,
-      isFetching: fetchingSkillsSh,
+      isFetching: fetchingSkillsShSearch,
       isPlaceholderData: placeholderSkillsSh,
-    } = useSearchSkillsSh(skillsShQuery, SKILLSSH_PAGE_SIZE, skillsShOffset);
+      error: skillsShSearchError,
+      refetch: refetchSkillsShSearch,
+    } = useSearchSkillsSh(
+      skillsShQuery,
+      SKILLSSH_PAGE_SIZE,
+      skillsShOffset,
+      effectiveSource === "skillssh" && !browsingLeaderboard,
+    );
+
+    const skillsShItems = useMemo(() => {
+      const items = browsingLeaderboard
+        ? (leaderboard.data?.pages.flatMap((page) => page.skills) ?? [])
+        : accumulatedResults;
+      return [...new Map(items.map((skill) => [skill.key, skill])).values()];
+    }, [browsingLeaderboard, leaderboard.data, accumulatedResults]);
+    const fetchingSkillsSh = browsingLeaderboard
+      ? leaderboard.isFetching
+      : fetchingSkillsShSearch;
+    const skillsShError = browsingLeaderboard
+      ? leaderboard.error
+      : skillsShSearchError;
+    const retrySkillsSh = () =>
+      browsingLeaderboard
+        ? leaderboard.isFetchNextPageError
+          ? leaderboard.fetchNextPage()
+          : leaderboard.refetch()
+        : refetchSkillsShSearch();
 
     // 当搜索结果返回时累积
     useEffect(() => {
@@ -206,11 +249,6 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       return installedKeys.has(key);
     };
 
-    const loading =
-      searchSource === "repos"
-        ? loadingDiscoverable || fetchingDiscoverable
-        : false;
-
     useImperativeHandle(ref, () => ({
       refresh: () => {
         refetchDiscoverable();
@@ -236,8 +274,8 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     const handleInstall = async (key: string) => {
       let skill: DiscoverableSkill | undefined;
 
-      if (searchSource === "skillssh") {
-        const found = accumulatedResults.find((s) => s.key === key);
+      if (effectiveSource === "skillssh") {
+        const found = skillsShItems.find((s) => s.key === key);
         if (found) {
           skill = toDiscoverableSkill(found);
         }
@@ -351,16 +389,11 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     }, [skills, searchQuery, filterRepo, filterStatus]);
 
     // 是否有更多 skills.sh 结果
-    const hasMoreSkillsSh =
-      skillsShResult && accumulatedResults.length < skillsShResult.totalCount;
+    const hasMoreSkillsSh = browsingLeaderboard
+      ? leaderboard.hasNextPage
+      : skillsShResult && skillsShItems.length < skillsShResult.totalCount;
     const searchingSkillsSh =
-      (loadingSkillsSh || fetchingSkillsSh) && accumulatedResults.length === 0;
-
-    // 无仓库配置时默认切换到 skills.sh；仓库发现结果为空时仍保留仓库视图，方便手动刷新重试。
-    const effectiveSource =
-      searchSource === "repos" && repos.length === 0 && !loading
-        ? "skillssh"
-        : searchSource;
+      (loadingSkillsSh || fetchingSkillsSh) && skillsShItems.length === 0;
 
     useEffect(() => {
       onSourceChange?.(effectiveSource);
@@ -493,14 +526,48 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                 </>
               ) : (
                 <>
+                  <div className="w-full md:w-40 shrink-0">
+                    <Select
+                      value={leaderboardView}
+                      onValueChange={(value) =>
+                        setLeaderboardView(value as SkillsShLeaderboardView)
+                      }
+                      disabled={!browsingLeaderboard}
+                    >
+                      <SelectTrigger
+                        aria-label={t("skills.skillssh.sortLabel")}
+                        className="bg-card border shadow-sm text-foreground"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all-time">
+                          {t("skills.skillssh.sortAllTime")}
+                        </SelectItem>
+                        <SelectItem value="trending">
+                          {t("skills.skillssh.sortTrending")}
+                        </SelectItem>
+                        <SelectItem value="hot">
+                          {t("skills.skillssh.sortHot")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   {/* skills.sh 搜索框 */}
                   <div className="relative flex-1 min-w-0">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      type="text"
+                      type="search"
                       placeholder={t("skills.skillssh.searchPlaceholder")}
                       value={skillsShInput}
-                      onChange={(e) => setSkillsShInput(e.target.value)}
+                      onChange={(e) => {
+                        setSkillsShInput(e.target.value);
+                        if (!e.target.value.trim()) {
+                          setSkillsShQuery("");
+                          setSkillsShOffset(0);
+                          setAccumulatedResults([]);
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleSkillsShSearch();
                       }}
@@ -573,32 +640,59 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
             ) : (
               /* ===== skills.sh 模式 ===== */
               <>
+                {skillsShError && (
+                  <div
+                    role="alert"
+                    className="mb-4 flex items-center justify-center gap-3 text-sm text-muted-foreground"
+                  >
+                    {t(
+                      browsingLeaderboard
+                        ? "skills.skillssh.leaderboardError"
+                        : "skills.skillssh.error",
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={fetchingSkillsSh}
+                      onClick={retrySkillsSh}
+                    >
+                      {t("skills.skillssh.retry")}
+                    </Button>
+                  </div>
+                )}
+                {!browsingLeaderboard && (
+                  <p className="mb-4 text-xs text-muted-foreground">
+                    {t("skills.skillssh.searchSortHint")}
+                  </p>
+                )}
                 {searchingSkillsSh ? (
                   <div className="flex items-center justify-center h-64">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                     <span className="ml-3 text-sm text-muted-foreground">
-                      {t("skills.skillssh.loading")}
+                      {t(
+                        browsingLeaderboard
+                          ? "skills.skillssh.leaderboardLoading"
+                          : "skills.skillssh.loading",
+                      )}
                     </span>
                   </div>
-                ) : skillsShQuery.length < 2 ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-center">
-                    <Search className="h-12 w-12 text-muted-foreground/30 mb-4" />
-                    <p className="text-sm text-muted-foreground">
-                      {t("skills.skillssh.searchPlaceholder")}
-                    </p>
-                  </div>
-                ) : accumulatedResults.length === 0 ? (
+                ) : skillsShItems.length === 0 && !skillsShError ? (
                   <div className="flex flex-col items-center justify-center h-48 text-center">
                     <p className="text-lg font-medium text-foreground">
-                      {t("skills.skillssh.noResults", {
-                        query: skillsShQuery,
-                      })}
+                      {t(
+                        browsingLeaderboard
+                          ? "skills.skillssh.leaderboardEmpty"
+                          : "skills.skillssh.noResults",
+                        {
+                          query: skillsShQuery,
+                        },
+                      )}
                     </p>
                   </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {accumulatedResults.map((skill) => {
+                      {skillsShItems.map((skill) => {
                         const installed = isSkillsShInstalled(skill);
                         return (
                           <SkillCard
@@ -614,31 +708,33 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                         );
                       })}
                     </div>
-
-                    {/* 加载更多 + 底部信息 */}
-                    <div className="mt-6 flex flex-col items-center gap-2">
-                      {hasMoreSkillsSh && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={fetchingSkillsSh}
-                          onClick={() =>
-                            setSkillsShOffset(
-                              (prev) => prev + SKILLSSH_PAGE_SIZE,
-                            )
-                          }
-                        >
-                          {fetchingSkillsSh ? (
-                            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                          ) : null}
-                          {t("skills.skillssh.loadMore")}
-                        </Button>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        {t("skills.skillssh.poweredBy")}
-                      </p>
-                    </div>
                   </>
+                )}
+                {!searchingSkillsSh && (
+                  <div className="mt-6 flex flex-col items-center gap-2">
+                    {hasMoreSkillsSh && !skillsShError && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={fetchingSkillsSh}
+                        onClick={() =>
+                          browsingLeaderboard
+                            ? leaderboard.fetchNextPage()
+                            : setSkillsShOffset(
+                                (prev) => prev + SKILLSSH_PAGE_SIZE,
+                              )
+                        }
+                      >
+                        {fetchingSkillsSh && (
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        )}
+                        {t("skills.skillssh.loadMore")}
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {t("skills.skillssh.poweredBy")}
+                    </p>
+                  </div>
                 )}
               </>
             )}

@@ -722,7 +722,11 @@
       "geminiDesc": "Google Gemini CLI",
       "opencodeDesc": "OpenCode CLI",
       "showProfileSwitcher": "显示项目切换",
-      "showProfileSwitcherDescription": "在主页面顶部显示项目切换入口"
+      "showProfileSwitcherDescription": "在主页面顶部显示项目切换入口",
+      "openSkillsOnStartup": "启动时打开 Skills",
+      "openSkillsOnStartupDescription": "启动软件时自动进入 Skills 页面，下次启动生效",
+      "skillsFollowVisibleApps": "Skills 跟随主页面应用选择",
+      "skillsFollowVisibleAppsDescription": "只显示主页面勾选且支持 Skills 的应用，保留技能和启用状态"
     },
     "skillStorage": {
       "title": "Skills 存储位置",
@@ -2491,6 +2495,23 @@
     }
   },
   "skills": {
+    "document": {
+      "retry": "重试",
+      "open": "预览/编辑 {{name}}",
+      "title": "{{name}} · SKILL.md",
+      "mode": "内容查看方式",
+      "preview": "预览",
+      "edit": "编辑",
+      "unsaved": "有未保存的修改",
+      "loadFailed": "读取 SKILL.md 失败",
+      "saveFailed": "保存 SKILL.md 失败",
+      "saved": "SKILL.md 已保存并同步",
+      "syncPartial": "SKILL.md 已保存，但部分应用同步失败",
+      "updateWarning": "从仓库更新此 Skill 会覆盖本地修改。",
+      "discardTitle": "放弃修改？",
+      "discardMessage": "当前修改尚未保存，返回后会丢失。",
+      "discard": "放弃修改"
+    },
     "manage": "Skills",
     "title": "Skills 管理",
     "description": "从流行的仓库发现并安装技能，扩展 Claude Code/Codex/Gemini 的能力",
@@ -2592,7 +2613,16 @@
       "skillssh": "skills.sh"
     },
     "skillssh": {
-      "searchPlaceholder": "搜索 skills.sh（至少 2 个字符）...",
+      "searchPlaceholder": "搜索 skills.sh（可选，至少 2 个字符）...",
+      "sortLabel": "榜单排序",
+      "sortAllTime": "总安装量",
+      "sortTrending": "24 小时趋势",
+      "sortHot": "热门",
+      "leaderboardLoading": "正在加载公开榜单...",
+      "leaderboardEmpty": "当前榜单暂无可安装技能",
+      "leaderboardError": "加载公开榜单失败",
+      "retry": "重试",
+      "searchSortHint": "搜索结果按相关性排序；清空搜索可返回榜单",
       "installs": "{{count}} 次安装",
       "loadMore": "加载更多",
       "loading": "正在搜索 skills.sh...",
