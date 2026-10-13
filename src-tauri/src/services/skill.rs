@@ -256,12 +256,37 @@ struct SkillsShApiResponse {
 /// skills.sh API 原始技能条目
 #[derive(Debug, Clone, Deserialize)]
 struct SkillsShApiSkill {
+    #[serde(default)]
     pub id: String,
     #[serde(rename = "skillId")]
     pub skill_id: String,
     pub name: String,
     pub installs: u64,
     pub source: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillsShLeaderboardView {
+    AllTime,
+    Trending,
+    Hot,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillsShLeaderboardApiResponse {
+    skills: Vec<SkillsShApiSkill>,
+    total: usize,
+    has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsShLeaderboardResult {
+    pub skills: Vec<SkillsShDiscoverableSkill>,
+    pub total_count: usize,
+    pub has_more: bool,
 }
 
 /// skills.sh 搜索结果（返回给前端）
@@ -340,6 +365,25 @@ pub struct SkillMetadata {
     pub name: Option<String>,
     pub description: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDocument {
+    pub content: String,
+    pub revision: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDocumentSaveResult {
+    pub document: SkillDocument,
+    pub skill: InstalledSkill,
+    pub backup_path: String,
+    pub sync_errors: Vec<String>,
+}
+
+const MAX_SKILL_DOCUMENT_BYTES: u64 = 1024 * 1024;
 
 /// 导入已有 Skill 时，前端显式提交的启用应用选择
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1986,6 +2030,151 @@ impl SkillService {
         );
 
         Ok(restored_skill)
+    }
+
+    fn skill_document_path(skill: &InstalledSkill) -> Result<PathBuf> {
+        let directory = Self::require_valid_directory(&skill.directory)?;
+        let root = Self::get_ssot_dir()?.canonicalize()?;
+        let source = root.join(directory).canonicalize()?;
+        let path = source.join("SKILL.md").canonicalize()?;
+        if !source.starts_with(&root) || !path.starts_with(&source) || !path.is_file() {
+            return Err(anyhow!("SKILL.md 不在托管技能目录内，拒绝读写"));
+        }
+        Ok(path)
+    }
+
+    fn read_skill_document_at(skill: &InstalledSkill, path: &Path) -> Result<SkillDocument> {
+        use sha2::{Digest, Sha256};
+        use std::io::Read;
+
+        let mut content = String::new();
+        fs::File::open(path)?
+            .take(MAX_SKILL_DOCUMENT_BYTES + 1)
+            .read_to_string(&mut content)?;
+        if content.len() as u64 > MAX_SKILL_DOCUMENT_BYTES {
+            return Err(anyhow!("SKILL.md 超过 1 MiB，无法在应用内编辑"));
+        }
+        Ok(SkillDocument {
+            revision: format!(
+                "{}:{:x}",
+                skill.installed_at,
+                Sha256::digest(content.as_bytes())
+            ),
+            content,
+            path: path.display().to_string(),
+        })
+    }
+
+    pub fn read_skill_document(db: &Arc<Database>, id: &str) -> Result<SkillDocument> {
+        let _guard = skill_state_read_guard();
+        let skill = db
+            .get_installed_skill(id)?
+            .ok_or_else(|| anyhow!("Skill not found: {id}"))?;
+        Self::read_skill_document_at(&skill, &Self::skill_document_path(&skill)?)
+    }
+
+    pub fn save_skill_document(
+        db: &Arc<Database>,
+        id: &str,
+        content: &str,
+        expected_revision: &str,
+    ) -> Result<SkillDocumentSaveResult> {
+        if content.trim().is_empty() || content.len() as u64 > MAX_SKILL_DOCUMENT_BYTES {
+            return Err(anyhow!("SKILL.md 内容不能为空，且不能超过 1 MiB"));
+        }
+        let text = content.trim_start_matches('\u{feff}');
+        let mut lines = text.lines();
+        let metadata = if lines.next() == Some("---") {
+            let mut front_matter = Vec::new();
+            let mut closed = false;
+            for line in lines {
+                if line.trim() == "---" {
+                    closed = true;
+                    break;
+                }
+                front_matter.push(line);
+            }
+            if !closed {
+                return Err(anyhow!("SKILL.md 的 YAML 元数据缺少结束分隔符 ---"));
+            }
+            serde_yaml::from_str::<SkillMetadata>(&front_matter.join("\n"))
+                .context("SKILL.md 的 YAML 元数据无效")?
+        } else {
+            SkillMetadata {
+                name: None,
+                description: None,
+            }
+        };
+
+        let _guard = skill_state_write_guard();
+        let mut skill = db
+            .get_installed_skill(id)?
+            .ok_or_else(|| anyhow!("Skill not found: {id}"))?;
+        let path = Self::skill_document_path(&skill)?;
+        let original = Self::read_skill_document_at(&skill, &path)?;
+        if original.revision != expected_revision {
+            return Err(anyhow!("SKILL.md 已被外部修改，请重新打开预览后再编辑"));
+        }
+        skill.apps.pi = Self::skill_exists_in_app(&skill.directory, &AppType::Pi);
+        let source = Self::get_ssot_dir()?.join(&skill.directory);
+        let mut deployments = Vec::new();
+        for app in [AppType::Pi, AppType::Mcode] {
+            if skill.apps.is_enabled_for(&app) {
+                let destination = Self::get_distinct_app_skills_dir(&Self::get_ssot_dir()?, &app)?
+                    .join(&skill.directory);
+                if let Some(deployment) =
+                    Self::inspect_pi_skill_destination(&source, &destination, &skill.directory)?
+                {
+                    deployments.push((destination, deployment));
+                }
+            }
+        }
+        let backup_path = Self::create_uninstall_backup(&skill)?
+            .ok_or_else(|| anyhow!("无法备份 SKILL.md，取消保存"))?;
+        if Self::read_skill_document_at(&skill, &path)?.revision != expected_revision {
+            return Err(anyhow!("SKILL.md 已被外部修改，请重新打开预览后再编辑"));
+        }
+        crate::config::write_text_file(&path, content)?;
+        skill.name = metadata.name.unwrap_or_else(|| skill.directory.clone());
+        skill.description = metadata.description;
+        skill.updated_at = Utc::now().timestamp();
+        let persisted = (|| -> Result<()> {
+            skill.content_hash = Some(Self::compute_dir_hash(&source)?);
+            if !db.update_skill_metadata(&skill)? {
+                return Err(anyhow!("Skill no longer installed: {id}"));
+            }
+            Ok(())
+        })();
+        if let Err(error) = persisted {
+            crate::config::write_text_file(&path, &original.content)
+                .context("保存失败且原文恢复失败，请从备份恢复")?;
+            return Err(error);
+        }
+
+        let mut sync_errors = Vec::new();
+        for (destination, deployment) in deployments {
+            if let Err(error) = Self::refresh_pi_skill_destination(
+                &source,
+                &destination,
+                &skill.directory,
+                &deployment,
+            ) {
+                sync_errors.push(format!("{}: {error}", destination.display()));
+            }
+        }
+        for app in AppType::all() {
+            if !matches!(app, AppType::Pi) && skill.apps.is_enabled_for(&app) {
+                if let Err(error) = Self::sync_to_app_dir(&skill.directory, &app) {
+                    sync_errors.push(format!("{}: {error}", app.as_str()));
+                }
+            }
+        }
+        Ok(SkillDocumentSaveResult {
+            document: Self::read_skill_document_at(&skill, &path)?,
+            skill,
+            backup_path: backup_path.display().to_string(),
+            sync_errors,
+        })
     }
 
     /// 切换应用启用状态
@@ -4266,38 +4455,63 @@ impl SkillService {
         let skills = resp
             .skills
             .into_iter()
-            .filter_map(|s| {
-                let parts: Vec<&str> = s.source.splitn(2, '/').collect();
-                if parts.len() != 2 {
-                    return None;
-                }
-                let (owner, repo) = (parts[0].to_string(), parts[1].to_string());
-                // 用与 download_repo 同一套坐标校验，而不是就地写启发式：下面这个
-                // readme_url 最终交给 openExternal 打开，是和 build_skill_doc_url
-                // 同一个 sink。原来的 `contains('.')` 既漏（`splitn(2, '/')` 允许
-                // repo 里带 `/`，`owner/a/b` 能拼出三段路径），又误伤（GitHub 仓库
-                // 名合法含点）。校验 owner 同时也保留了"过滤非 GitHub 来源"的效果
-                // ——`skills.volces.com` 这类带点的 owner 本来就不是合法用户名。
-                if Self::validate_repo_ref(&owner, &repo, "main").is_err() {
-                    return None;
-                }
-                Some(SkillsShDiscoverableSkill {
-                    key: s.id,
-                    name: s.name,
-                    directory: s.skill_id.clone(),
-                    repo_owner: owner.clone(),
-                    repo_name: repo.clone(),
-                    repo_branch: "main".to_string(),
-                    installs: s.installs,
-                    readme_url: Some(format!("https://github.com/{}/{}", owner, repo)),
-                })
-            })
+            .filter_map(Self::skills_sh_discoverable)
             .collect();
 
         Ok(SkillsShSearchResult {
             skills,
             total_count: resp.count,
             query: resp.query,
+        })
+    }
+
+    fn skills_sh_discoverable(skill: SkillsShApiSkill) -> Option<SkillsShDiscoverableSkill> {
+        let (owner, repo) = skill.source.split_once('/')?;
+        // Both feeds use the GitHub installer and external-link validation.
+        Self::validate_repo_ref(owner, repo, "main").ok()?;
+        Self::require_valid_directory(&skill.skill_id).ok()?;
+        Some(SkillsShDiscoverableSkill {
+            key: if skill.id.is_empty() {
+                format!("{}/{}", skill.source, skill.skill_id)
+            } else {
+                skill.id
+            },
+            name: skill.name,
+            directory: skill.skill_id,
+            repo_owner: owner.to_string(),
+            repo_name: repo.to_string(),
+            repo_branch: "main".to_string(),
+            installs: skill.installs,
+            readme_url: Some(format!("https://github.com/{owner}/{repo}")),
+        })
+    }
+
+    pub async fn get_skills_sh_leaderboard(
+        view: SkillsShLeaderboardView,
+        page: usize,
+    ) -> Result<SkillsShLeaderboardResult> {
+        let view = match view {
+            SkillsShLeaderboardView::AllTime => "all-time",
+            SkillsShLeaderboardView::Trending => "trending",
+            SkillsShLeaderboardView::Hot => "hot",
+        };
+        // shortcut: public website feed; switch to the versioned API if its contract changes.
+        let response = crate::proxy::http_client::get()
+            .get(format!("https://www.skills.sh/api/skills/{view}/{page}"))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<SkillsShLeaderboardApiResponse>()
+            .await?;
+        Ok(SkillsShLeaderboardResult {
+            skills: response
+                .skills
+                .into_iter()
+                .filter_map(Self::skills_sh_discoverable)
+                .collect(),
+            total_count: response.total,
+            has_more: response.has_more,
         })
     }
 }
@@ -4525,6 +4739,70 @@ pub fn migrate_skills_to_ssot(db: &Arc<Database>) -> Result<usize> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn skills_sh_leaderboard_accepts_rows_without_search_ids() {
+        let response: SkillsShLeaderboardApiResponse = serde_json::from_value(serde_json::json!({
+            "skills": [
+                {"source":"owner-a/repo-a","skillId":"same-skill","name":"A","installs":40},
+                {"source":"owner-b/repo-b","skillId":"same-skill","name":"B","installs":30}
+            ],
+            "total": 300, "hasMore": true, "page": 0
+        }))
+        .unwrap();
+        assert_eq!(response.total, 300);
+        assert!(response.has_more);
+        let skills: Vec<_> = response
+            .skills
+            .into_iter()
+            .filter_map(SkillService::skills_sh_discoverable)
+            .collect();
+        assert_eq!(skills.len(), 2);
+        assert_eq!(skills[0].key, "owner-a/repo-a/same-skill");
+        assert_eq!(skills[1].key, "owner-b/repo-b/same-skill");
+        assert_eq!(
+            skills[0].readme_url.as_deref(),
+            Some("https://github.com/owner-a/repo-a")
+        );
+    }
+
+    #[test]
+    fn skills_sh_leaderboard_rejects_unsafe_and_unsupported_coordinates() {
+        for (source, directory) in [
+            ("domain.example/skills", "skill"),
+            ("owner/repo/extra", "skill"),
+            ("owner/repo", "../escape"),
+            ("owner/repo", "nested/skill"),
+        ] {
+            let skill: SkillsShApiSkill = serde_json::from_value(serde_json::json!({
+                "source": source, "skillId": directory, "name": "Skill", "installs": 1
+            }))
+            .unwrap();
+            assert!(SkillService::skills_sh_discoverable(skill).is_none());
+        }
+        let skill: SkillsShApiSkill = serde_json::from_value(serde_json::json!({
+            "id":"existing-search-id", "source":"owner/repo.with-dot",
+            "skillId":"valid-skill", "name":"Skill", "installs":1
+        }))
+        .unwrap();
+        assert_eq!(
+            SkillService::skills_sh_discoverable(skill).unwrap().key,
+            "existing-search-id"
+        );
+    }
+
+    #[test]
+    fn skills_sh_leaderboard_only_accepts_the_three_supported_views() {
+        for view in ["all-time", "trending", "hot"] {
+            let parsed: SkillsShLeaderboardView =
+                serde_json::from_value(serde_json::json!(view)).unwrap();
+            assert_eq!(serde_json::to_value(parsed).unwrap(), view);
+        }
+        assert!(
+            serde_json::from_value::<SkillsShLeaderboardView>(serde_json::json!("../../other"))
+                .is_err()
+        );
+    }
 
     #[test]
     fn skill_state_lock_allows_snapshots_but_excludes_writers() {

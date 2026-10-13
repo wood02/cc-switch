@@ -286,6 +286,45 @@ describe("SettingsPage Component", () => {
     expect(document.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
+  it.each([undefined, false, true])(
+    "saves the startup Skills switch from its %s state",
+    async (enabled) => {
+      settingsMock.settings.openSkillsOnStartup = enabled;
+      renderSettingsPage();
+      const toggle = screen.getByRole("switch", {
+        name: "settings.appVisibility.openSkillsOnStartup",
+      });
+      if (enabled) expect(toggle).toBeChecked();
+      else expect(toggle).not.toBeChecked();
+
+      fireEvent.click(toggle);
+      await waitFor(() =>
+        expect(settingsMock.autoSaveSettings).toHaveBeenCalledWith({
+          openSkillsOnStartup: !enabled,
+        }),
+      );
+    },
+  );
+
+  it.each([undefined, false, true])(
+    "saves the Skills app visibility switch from its %s state",
+    async (enabled) => {
+      settingsMock.settings.skillsFollowVisibleApps = enabled;
+      renderSettingsPage();
+      const toggle = screen.getByRole("switch", {
+        name: "settings.appVisibility.skillsFollowVisibleApps",
+      });
+      if (enabled) expect(toggle).toBeChecked();
+      else expect(toggle).not.toBeChecked();
+      fireEvent.click(toggle);
+      await waitFor(() =>
+        expect(settingsMock.autoSaveSettings).toHaveBeenCalledWith({
+          skillsFollowVisibleApps: !enabled,
+        }),
+      );
+    },
+  );
+
   it("should reset import/export status when dialog transitions to open", () => {
     const client = new QueryClient({
       defaultOptions: {

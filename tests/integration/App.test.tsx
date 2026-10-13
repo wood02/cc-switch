@@ -1,6 +1,12 @@
 import { Suspense, type ComponentType } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+} from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { providersApi } from "@/lib/api/providers";
@@ -9,6 +15,8 @@ import {
   setCurrentProviderId,
   setLiveProviderIds,
   setProviders,
+  getSettings,
+  setSettings,
 } from "../msw/state";
 import { emitTauriEvent } from "../msw/tauriMocks";
 import { server } from "../msw/server";
@@ -146,7 +154,7 @@ vi.mock("@/components/AppSwitcher", () => ({
 vi.mock("@/components/skills/UnifiedSkillsPanel", async () => {
   const React = await import("react");
   const MockUnifiedSkillsPanel = React.forwardRef(
-    ({ onCheckUpdatesStateChange }: any, ref) => {
+    ({ onCheckUpdatesStateChange, visibleApps }: any, ref) => {
       React.useEffect(() => {
         onCheckUpdatesStateChange?.({ isChecking: false, hasSkills: true });
         return () =>
@@ -162,7 +170,13 @@ vi.mock("@/components/skills/UnifiedSkillsPanel", async () => {
         openRestoreFromBackup: vi.fn(),
         checkUpdates: skillsPanelMocks.checkUpdates,
       }));
-      return <div data-testid="unified-skills-panel" />;
+      return (
+        <div data-testid="unified-skills-panel">
+          <span data-testid="skills-visible-apps">
+            {JSON.stringify(visibleApps ?? null)}
+          </span>
+        </div>
+      );
     },
   );
   MockUnifiedSkillsPanel.displayName = "MockUnifiedSkillsPanel";
@@ -188,13 +202,14 @@ vi.mock("@/components/mcp/McpPanel", () => ({
 
 const renderApp = (AppComponent: ComponentType) => {
   const client = new QueryClient();
-  return render(
+  const result = render(
     <QueryClientProvider client={client}>
       <Suspense fallback={<div data-testid="loading">loading</div>}>
         <AppComponent />
       </Suspense>
     </QueryClientProvider>,
   );
+  return { ...result, client };
 };
 
 describe("App integration with MSW", () => {
@@ -536,6 +551,109 @@ describe("App integration with MSW", () => {
     );
 
     liveIdsSpy.mockRestore();
+  });
+
+  it("opens Skills once on startup and preserves normal back navigation", async () => {
+    setSettings({ openSkillsOnStartup: true, firstRunNoticeConfirmed: true });
+    localStorage.setItem("cc-switch-last-view", "providers");
+    localStorage.setItem("cc-switch-last-app", "codex");
+    const { default: App } = await import("@/App");
+    const { client } = renderApp(App);
+
+    expect(
+      await screen.findByTestId("unified-skills-panel"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "common.back" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("provider-list").textContent).toContain(
+        "codex-1",
+      ),
+    );
+
+    act(() => {
+      client.setQueryData(["settings"], { ...getSettings(), language: "en" });
+    });
+    expect(
+      screen.queryByTestId("unified-skills-panel"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("provider-list")).toBeInTheDocument();
+  });
+
+  it.each([undefined, false])(
+    "keeps the remembered page when startup Skills is %s",
+    async (enabled) => {
+      setSettings({ openSkillsOnStartup: enabled });
+      localStorage.setItem("cc-switch-last-view", "skills");
+      const { default: App } = await import("@/App");
+      const { client } = renderApp(App);
+
+      expect(
+        await screen.findByTestId("unified-skills-panel"),
+      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(client.getQueryData(["settings"])).toBeDefined(),
+      );
+      expect(screen.getByTestId("unified-skills-panel")).toBeInTheDocument();
+    },
+  );
+
+  it("applies a newly enabled startup preference on the next launch", async () => {
+    setSettings({ openSkillsOnStartup: false });
+    const { default: App } = await import("@/App");
+    const { client } = renderApp(App);
+    await screen.findByTestId("provider-list");
+    await waitFor(() =>
+      expect(client.getQueryData(["settings"])).toBeDefined(),
+    );
+
+    act(() => {
+      client.setQueryData(["settings"], {
+        ...getSettings(),
+        openSkillsOnStartup: true,
+      });
+    });
+    expect(
+      screen.queryByTestId("unified-skills-panel"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("provider-list")).toBeInTheDocument();
+  });
+
+  it("passes the selected apps to Skills only while the display preference is enabled", async () => {
+    setSettings({
+      skillsFollowVisibleApps: true,
+      firstRunNoticeConfirmed: true,
+      visibleApps: {
+        claude: true,
+        "claude-desktop": false,
+        codex: true,
+        hermes: true,
+        gemini: false,
+        grokbuild: false,
+        opencode: false,
+        openclaw: false,
+        pi: false,
+        mcode: false,
+      },
+    });
+    localStorage.setItem("cc-switch-last-view", "skills");
+    const { default: App } = await import("@/App");
+    const { client } = renderApp(App);
+    await waitFor(() =>
+      expect(
+        JSON.parse(screen.getByTestId("skills-visible-apps").textContent!),
+      ).toEqual(getSettings().visibleApps),
+    );
+    act(() => {
+      client.setQueryData(["settings"], {
+        ...getSettings(),
+        skillsFollowVisibleApps: false,
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-visible-apps")).toHaveTextContent(
+        "null",
+      ),
+    );
   });
 
   it("hosts the Skills check-update action in the App toolbar", async () => {

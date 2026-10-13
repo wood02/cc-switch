@@ -13,12 +13,27 @@ import type {
   SkillRepo,
   SkillsShDiscoverableSkill,
   SkillsShSearchResult,
+  SkillsShLeaderboardResult,
+  SkillsShLeaderboardView,
 } from "@/lib/api/skills";
 
 const installMutateAsyncMock = vi.fn();
 let discoverableSkillsMock: DiscoverableSkill[] = [];
 let skillReposMock: SkillRepo[] = [];
 const refetchDiscoverableMock = vi.fn();
+const fetchLeaderboardPageMock = vi.fn();
+const refetchLeaderboardMock = vi.fn();
+const leaderboardCache = new Map<
+  SkillsShLeaderboardView,
+  {
+    data?: { pages: SkillsShLeaderboardResult[] };
+    hasNextPage?: boolean;
+    isLoading?: boolean;
+    isFetching?: boolean;
+    isFetchNextPageError?: boolean;
+    error?: Error;
+  }
+>();
 
 // Stable cache so repeated renders see referentially-equal data.
 // SkillsPage has `useEffect([skillsShResult, ...])` that calls setState — a
@@ -85,9 +100,23 @@ vi.mock("@/hooks/useSkills", () => ({
   }),
   useSearchSkillsSh: (query: string, _limit: number, offset: number) => {
     const cached = searchCache.get(`${query}:${offset}`);
-    if (cached) return cached;
-    return { data: undefined, isLoading: false, isFetching: false };
+    if (cached) return { ...cached, refetch: vi.fn() };
+    return {
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    };
   },
+  useSkillsShLeaderboard: (view: SkillsShLeaderboardView) => ({
+    data: undefined,
+    hasNextPage: false,
+    isLoading: false,
+    isFetching: false,
+    fetchNextPage: fetchLeaderboardPageMock,
+    refetch: refetchLeaderboardMock,
+    ...leaderboardCache.get(view),
+  }),
 }));
 
 const makeSkillsShSkill = (
@@ -134,6 +163,9 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     skillReposMock = [];
     refetchDiscoverableMock.mockReset();
     searchCache.clear();
+    leaderboardCache.clear();
+    fetchLeaderboardPageMock.mockReset();
+    refetchLeaderboardMock.mockReset();
   });
 
   it("installs the second skill when two results share the same directory", async () => {
@@ -287,11 +319,14 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     });
   });
 
-  it("keeps the repository source when configured repositories return no discoverable skills", async () => {
+  it("keeps the selected repository source when configured repositories return no discoverable skills", async () => {
     skillReposMock = [makeSkillRepo()];
     const onSourceChange = vi.fn();
 
     render(<SkillsPage initialApp="claude" onSourceChange={onSourceChange} />);
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "skills.searchSource.repos" }));
 
     await waitFor(() => {
       expect(onSourceChange).toHaveBeenCalledWith("repos");
@@ -335,5 +370,143 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     expect(
       getSkillsPageHeaderActions("skillssh").map((action) => action.key),
     ).toEqual(["manage-repos"]);
+  });
+
+  it("defaults to the public leaderboard and installs by the selected repository key", async () => {
+    leaderboardCache.set("all-time", {
+      data: {
+        pages: [
+          {
+            skills: [makeSkillsShSkill({ name: "Leaderboard Skill" })],
+            totalCount: 250,
+            hasMore: true,
+          },
+        ],
+      },
+      hasNextPage: true,
+    });
+    skillReposMock = [makeSkillRepo()];
+    render(<SkillsPage initialApp="codex" />);
+    expect(screen.getByText("Leaderboard Skill")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: "skills.skillssh.loadMore" }),
+    );
+    expect(fetchLeaderboardPageMock).toHaveBeenCalledTimes(1);
+    const card = screen
+      .getByText("Leaderboard Skill")
+      .closest("div.glass-card")!;
+    await user.click(card.querySelector("button:last-of-type")!);
+    expect(installMutateAsyncMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentApp: "codex",
+        skill: expect.objectContaining({
+          repoOwner: "owner-a",
+          repoName: "repo-a",
+        }),
+      }),
+    );
+  });
+
+  it("changes between the three server rankings without mixing pages", async () => {
+    for (const [view, name] of [
+      ["all-time", "Total Skill"],
+      ["trending", "Trending Skill"],
+      ["hot", "Hot Skill"],
+    ] as const) {
+      leaderboardCache.set(view, {
+        data: {
+          pages: [
+            {
+              skills: [makeSkillsShSkill({ name })],
+              totalCount: 1,
+              hasMore: false,
+            },
+          ],
+        },
+      });
+    }
+    render(<SkillsPage />);
+    const user = userEvent.setup();
+    expect(screen.getByText("Total Skill")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "skills.skillssh.sortTrending" }),
+    );
+    expect(screen.getByText("Trending Skill")).toBeInTheDocument();
+    expect(screen.queryByText("Total Skill")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "skills.skillssh.sortHot" }),
+    );
+    expect(screen.getByText("Hot Skill")).toBeInTheDocument();
+    expect(screen.queryByText("Trending Skill")).not.toBeInTheDocument();
+  });
+
+  it("returns to the leaderboard when clearing a submitted search", async () => {
+    leaderboardCache.set("all-time", {
+      data: {
+        pages: [
+          {
+            skills: [makeSkillsShSkill({ name: "Total Skill" })],
+            totalCount: 1,
+            hasMore: false,
+          },
+        ],
+      },
+    });
+    setSearchResult("react", 0, {
+      skills: [makeSkillsShSkill({ name: "React Skill" })],
+      totalCount: 1,
+      query: "react",
+    });
+    render(<SkillsPage />);
+    const user = userEvent.setup();
+    const input = screen.getByPlaceholderText(
+      "skills.skillssh.searchPlaceholder",
+    );
+    await user.type(input, "react");
+    await user.click(screen.getByRole("button", { name: "skills.search" }));
+    expect(screen.getByText("React Skill")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
+    ).toBeDisabled();
+    await user.clear(input);
+    expect(screen.getByText("Total Skill")).toBeInTheDocument();
+    expect(screen.queryByText("React Skill")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
+    ).toBeEnabled();
+  });
+
+  it("preserves loaded rows after a pagination error and offers retry", async () => {
+    const skill = makeSkillsShSkill({ name: "Loaded Skill" });
+    leaderboardCache.set("all-time", {
+      data: {
+        pages: [
+          { skills: [skill], totalCount: 2, hasMore: true },
+          { skills: [skill], totalCount: 2, hasMore: true },
+        ],
+      },
+      hasNextPage: true,
+      error: new Error("Network failure"),
+      isFetchNextPageError: true,
+    });
+    render(<SkillsPage />);
+    expect(screen.getAllByText("Loaded Skill")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "skills.skillssh.leaderboardError",
+    );
+    expect(
+      screen.queryByRole("button", { name: "skills.skillssh.loadMore" }),
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "skills.skillssh.retry" }));
+    expect(fetchLeaderboardPageMock).toHaveBeenCalledTimes(1);
   });
 });

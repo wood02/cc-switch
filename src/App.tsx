@@ -69,7 +69,6 @@ import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SettingsPage } from "@/components/settings/SettingsPage";
-import { UpdateBadge } from "@/components/UpdateBadge";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
 import { ProxyToggle } from "@/components/proxy/ProxyToggle";
 import { ClaudeDesktopRouteToggle } from "@/components/proxy/ClaudeDesktopRouteToggle";
@@ -202,6 +201,14 @@ function App() {
   }, [currentView]);
 
   const { data: settingsData } = useSettingsQuery();
+  const startupViewApplied = useRef(false);
+
+  useEffect(() => {
+    if (!settingsData || startupViewApplied.current) return;
+    startupViewApplied.current = true;
+    if (settingsData.openSkillsOnStartup) setCurrentView("skills");
+  }, [settingsData]);
+
   const useAppWindowControls =
     isLinux() && (settingsData?.useAppWindowControls ?? false);
   const dragBarHeight = useAppWindowControls ? 32 : DEFAULT_DRAG_BAR_HEIGHT;
@@ -1061,6 +1068,9 @@ function App() {
               onInteractionBlockedChange={setSkillsManagementBusy}
               onNavigationBlockedChange={setSkillsNavigationBusy}
               onCheckUpdatesStateChange={setSkillsCheckUpdatesState}
+              visibleApps={
+                settingsData?.skillsFollowVisibleApps ? visibleApps : undefined
+              }
               currentApp={
                 sharedFeatureApp === "openclaw" ? "claude" : sharedFeatureApp
               }
@@ -1369,12 +1379,6 @@ function App() {
                 >
                   <Settings className="w-4 h-4" />
                 </Button>
-                <UpdateBadge
-                  onClick={() => {
-                    setSettingsDefaultTab("about");
-                    setCurrentView("settings");
-                  }}
-                />
                 {isCurrentAppTakeoverActive && (
                   <Button
                     variant="ghost"

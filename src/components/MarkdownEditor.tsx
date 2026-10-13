@@ -6,6 +6,7 @@ import { EditorState } from "@codemirror/state";
 import { placeholder as placeholderExt } from "@codemirror/view";
 
 interface MarkdownEditorProps {
+  ariaLabel?: string;
   value: string;
   onChange?: (value: string) => void;
   placeholder?: string;
@@ -17,6 +18,7 @@ interface MarkdownEditorProps {
 }
 
 const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
+  ariaLabel = "Markdown",
   value,
   onChange,
   placeholder: placeholderText = "",
@@ -61,6 +63,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       markdown(),
       baseTheme,
       EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ "aria-label": ariaLabel }),
       EditorState.readOnly.of(readOnly),
     ];
 
@@ -130,7 +133,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       view.destroy();
       viewRef.current = null;
     };
-  }, [darkMode, readOnly, minHeight, maxHeight, placeholderText]); // 添加 placeholderText 依赖以支持国际化切换
+  }, [darkMode, readOnly, minHeight, maxHeight, placeholderText, ariaLabel]);
 
   // 当 value 从外部改变时更新编辑器内容
   useEffect(() => {

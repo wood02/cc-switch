@@ -1544,6 +1544,8 @@ pub fn run() {
             commands::restore_env_backup,
             // Skill management (v3.10.0+ unified)
             commands::get_installed_skills,
+            commands::read_skill_document,
+            commands::save_skill_document,
             commands::get_skill_backups,
             commands::delete_skill_backup,
             commands::install_skill_unified,
@@ -1557,6 +1559,7 @@ pub fn run() {
             commands::update_skill,
             commands::migrate_skill_storage,
             commands::search_skills_sh,
+            commands::get_skills_sh_leaderboard,
             // Skill management (legacy API compatibility)
             commands::get_skills,
             commands::get_skills_for_app,

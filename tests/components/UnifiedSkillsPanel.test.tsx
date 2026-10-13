@@ -11,8 +11,36 @@ import type {
   SkillBackupEntry,
   SkillUpdateInfo,
 } from "@/lib/api/skills";
+import type { VisibleApps } from "@/types";
+
+const selectedVisibleApps: VisibleApps = {
+  claude: true,
+  "claude-desktop": false,
+  codex: true,
+  hermes: true,
+  gemini: false,
+  grokbuild: false,
+  opencode: false,
+  openclaw: false,
+  pi: false,
+  mcode: false,
+};
 
 const scanUnmanagedMock = vi.fn();
+vi.mock("@/components/skills/SkillDocumentPanel", () => ({
+  SkillDocumentPanel: ({
+    skill,
+    onClose,
+  }: {
+    skill: InstalledSkill;
+    onClose: () => void;
+  }) => (
+    <div data-testid="skill-document">
+      <span>{skill.directory}</span>
+      <button onClick={onClose}>Close preview</button>
+    </div>
+  ),
+}));
 const toggleSkillAppMock = vi.fn();
 const uninstallSkillMock = vi.fn();
 const importSkillsMock = vi.fn();
@@ -150,6 +178,25 @@ const renderPanel = () =>
   render(<UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />);
 
 describe("UnifiedSkillsPanel", () => {
+  it("opens the selected Skill document and blocks management until it closes", async () => {
+    installedSkillsMock = [makeInstalledSkill()];
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(
+      screen.getByRole("button", { name: "skills.document.open" }),
+    );
+    expect(screen.getByTestId("skill-document")).toHaveTextContent(
+      "alpha-skill",
+    );
+    expect(
+      screen.getByRole("button", { name: "skills.document.open" }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Close preview" }));
+    expect(screen.queryByTestId("skill-document")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "skills.document.open" }),
+    ).toBeEnabled();
+  });
   beforeEach(() => {
     installedSkillsMock = [];
     skillBackupsMock = [];
@@ -190,6 +237,118 @@ describe("UnifiedSkillsPanel", () => {
     updateSkillMock.mockReset();
     updateSkillMock.mockImplementation(async (id: string) =>
       makeInstalledSkill({ id }),
+    );
+  });
+
+  it("filters count badges and row controls while preserving every skill and enabled state", () => {
+    installedSkillsMock = [
+      makeInstalledSkill({ apps: { gemini: true } }),
+      makeInstalledSkill({
+        id: "local:beta",
+        name: "Beta Skill",
+        directory: "beta",
+        apps: { gemini: true },
+      }),
+    ];
+    const { rerender } = render(
+      <UnifiedSkillsPanel
+        currentApp="claude"
+        onOpenDiscovery={vi.fn()}
+        visibleApps={selectedVisibleApps}
+      />,
+    );
+    expect(screen.getByText("Alpha Skill")).toBeInTheDocument();
+    expect(screen.getByText("Beta Skill")).toBeInTheDocument();
+    expect(screen.getByText("Claude:")).toBeInTheDocument();
+    expect(screen.getByText("Codex:")).toBeInTheDocument();
+    expect(screen.getByText("Hermes:")).toBeInTheDocument();
+    expect(screen.queryByText("Gemini:")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Gemini" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Claude" })).toHaveLength(2);
+    rerender(
+      <UnifiedSkillsPanel currentApp="claude" onOpenDiscovery={vi.fn()} />,
+    );
+    expect(screen.getByText("Gemini:")).toBeInTheDocument();
+    screen
+      .getAllByRole("button", { name: "Gemini" })
+      .forEach((button) =>
+        expect(button).toHaveAttribute("aria-pressed", "true"),
+      );
+    expect(toggleSkillAppMock).not.toHaveBeenCalled();
+    expect(bulkToggleSkillAppMock).not.toHaveBeenCalled();
+  });
+
+  it("shares the Claude Desktop skills entry and includes a selected Pi without inventing OpenClaw support", () => {
+    installedSkillsMock = [makeInstalledSkill({ apps: { pi: true } })];
+    const desktopVisible = {
+      ...selectedVisibleApps,
+      claude: false,
+      codex: false,
+      hermes: false,
+      "claude-desktop": true,
+      openclaw: true,
+    };
+    const { rerender } = render(
+      <UnifiedSkillsPanel
+        currentApp="claude"
+        onOpenDiscovery={vi.fn()}
+        visibleApps={desktopVisible}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Claude" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "OpenClaw" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Codex" }),
+    ).not.toBeInTheDocument();
+    rerender(
+      <UnifiedSkillsPanel
+        currentApp="claude"
+        onOpenDiscovery={vi.fn()}
+        visibleApps={{ ...desktopVisible, "claude-desktop": false, pi: true }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Pi" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Claude" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the same visible app controls in the import dialog without rewriting hidden source flags", async () => {
+    const ref = createRef<UnifiedSkillsPanelHandle>();
+    importSkillsMock.mockResolvedValue([]);
+    render(
+      <UnifiedSkillsPanel
+        ref={ref}
+        currentApp="claude"
+        onOpenDiscovery={vi.fn()}
+        visibleApps={selectedVisibleApps}
+      />,
+    );
+    await act(async () => {
+      ref.current?.openImport();
+    });
+    expect(await screen.findByText("Shared Skill")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Claude" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Grok Build" }),
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "skills.importSelected" }));
+    await waitFor(() =>
+      expect(importSkillsMock).toHaveBeenCalledWith([
+        expect.objectContaining({
+          directory: "shared-skill",
+          apps: expect.objectContaining({ grokbuild: true }),
+        }),
+      ]),
     );
   });
 

@@ -722,7 +722,11 @@
       "geminiDesc": "Google Gemini CLI",
       "opencodeDesc": "OpenCode CLI",
       "showProfileSwitcher": "プロジェクト切り替えを表示",
-      "showProfileSwitcherDescription": "メイン画面上部にプロジェクト切り替えを表示します"
+      "showProfileSwitcherDescription": "メイン画面上部にプロジェクト切り替えを表示します",
+      "openSkillsOnStartup": "起動時に Skills を開く",
+      "openSkillsOnStartupDescription": "次回の起動時に Skills ページを自動で開きます",
+      "skillsFollowVisibleApps": "Skills をメイン画面のアプリ選択に合わせる",
+      "skillsFollowVisibleAppsDescription": "選択された Skills 対応アプリのみ表示し、スキルと有効状態は保持します"
     },
     "skillStorage": {
       "title": "スキル保存場所",
@@ -2491,6 +2495,23 @@
     }
   },
   "skills": {
+    "document": {
+      "retry": "再試行",
+      "open": "{{name}} をプレビュー・編集",
+      "title": "{{name}} · SKILL.md",
+      "mode": "表示モード",
+      "preview": "プレビュー",
+      "edit": "編集",
+      "unsaved": "未保存の変更があります",
+      "loadFailed": "SKILL.md を読み込めませんでした",
+      "saveFailed": "SKILL.md を保存できませんでした",
+      "saved": "SKILL.md を保存して同期しました",
+      "syncPartial": "SKILL.md は保存されましたが、一部のアプリへの同期に失敗しました",
+      "updateWarning": "リポジトリからこの Skill を更新すると、ローカルの変更は上書きされます。",
+      "discardTitle": "変更を破棄しますか？",
+      "discardMessage": "変更は保存されていません。戻ると失われます。",
+      "discard": "変更を破棄"
+    },
     "manage": "Skills",
     "title": "Skills 管理",
     "description": "人気リポジトリからスキルを探してインストールし、Claude Code/Codex/Gemini を拡張",
@@ -2592,7 +2613,16 @@
       "skillssh": "skills.sh"
     },
     "skillssh": {
-      "searchPlaceholder": "skills.sh を検索（2文字以上）...",
+      "searchPlaceholder": "skills.sh を検索（任意、2文字以上）...",
+      "sortLabel": "ランキングの並び順",
+      "sortAllTime": "累計インストール数",
+      "sortTrending": "24時間のトレンド",
+      "sortHot": "人気急上昇",
+      "leaderboardLoading": "公開ランキングを読み込み中...",
+      "leaderboardEmpty": "このランキングにインストール可能なスキルはありません",
+      "leaderboardError": "公開ランキングを読み込めませんでした",
+      "retry": "再試行",
+      "searchSortHint": "検索結果は関連度順です。検索をクリアするとランキングに戻ります。",
       "installs": "{{count}} インストール",
       "loadMore": "さらに読み込む",
       "loading": "skills.sh を検索中...",
