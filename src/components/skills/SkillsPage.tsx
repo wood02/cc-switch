@@ -34,7 +34,10 @@ import {
   useRemoveSkillRepo,
   useSearchSkillsSh,
   useSkillsShLeaderboard,
+  useBestSkillsDates,
+  useBestSkillsRanking,
 } from "@/hooks/useSkills";
+import { BEST_SKILLS_RANKINGS, type BestSkillsRanking } from "@/lib/bestSkills";
 import type { AppId } from "@/lib/api/types";
 import type {
   DiscoverableSkill,
@@ -44,7 +47,7 @@ import type {
 } from "@/lib/api/skills";
 import { formatSkillError } from "@/lib/errors/skillErrorParser";
 
-export type SkillsPageSource = "repos" | "skillssh";
+export type SkillsPageSource = "repos" | "skillssh" | "custom";
 
 interface SkillsPageProps {
   initialApp?: AppId;
@@ -74,7 +77,7 @@ const SKILLS_PAGE_HEADER_ACTIONS: readonly SkillsPageHeaderAction[] = [
   },
   {
     key: "manage-repos",
-    sources: ["repos", "skillssh"],
+    sources: ["repos", "skillssh", "custom"],
     labelKey: "skills.repoManager",
     Icon: Settings,
     execute: (page) => page?.openRepoManager(),
@@ -106,7 +109,9 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     const [searchSource, setSearchSource] =
       useState<SkillsPageSource>("skillssh");
     const [leaderboardView, setLeaderboardView] =
-      useState<SkillsShLeaderboardView>("all-time");
+      useState<SkillsShLeaderboardView>("trending");
+    const [ranking, setRanking] = useState<BestSkillsRanking>("best-100");
+    const [dataDate, setDataDate] = useState("latest");
     const [skillsShInput, setSkillsShInput] = useState("");
     const [skillsShQuery, setSkillsShQuery] = useState("");
     const [skillsShOffset, setSkillsShOffset] = useState(0);
@@ -133,6 +138,24 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
       searchSource === "repos" && repos.length === 0 && !loading
         ? "skillssh"
         : searchSource;
+    const isCustom = effectiveSource === "custom";
+    const history = useBestSkillsDates(isCustom);
+    const customRanking = useBestSkillsRanking(ranking, dataDate, isCustom);
+    const customRows = useMemo(() => {
+      const rows = customRanking.isError ? [] : (customRanking.data ?? []);
+      const query = searchQuery.trim().toLowerCase();
+      return query
+        ? rows.filter((row) =>
+            `${row.name} ${row.description} ${row.skill?.repoOwner ?? ""}/${row.skill?.repoName ?? ""}`
+              .toLowerCase()
+              .includes(query),
+          )
+        : rows;
+    }, [customRanking.data, customRanking.isError, searchQuery]);
+    const reloadCustom = () => {
+      void customRanking.refetch();
+      void history.refetch();
+    };
     const browsingLeaderboard = skillsShQuery.length === 0;
     const leaderboard = useSkillsShLeaderboard(
       leaderboardView,
@@ -244,7 +267,9 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     }, [discoverableSkills, installedKeys]);
 
     // 检查 skills.sh 结果的安装状态
-    const isSkillsShInstalled = (skill: SkillsShDiscoverableSkill): boolean => {
+    const isSkillsShInstalled = (
+      skill: Pick<DiscoverableSkill, "directory" | "repoOwner" | "repoName">,
+    ): boolean => {
       const key = `${skill.directory.toLowerCase()}:${skill.repoOwner.toLowerCase()}:${skill.repoName.toLowerCase()}`;
       return installedKeys.has(key);
     };
@@ -274,7 +299,9 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
     const handleInstall = async (key: string) => {
       let skill: DiscoverableSkill | undefined;
 
-      if (effectiveSource === "skillssh") {
+      if (isCustom) {
+        skill = customRows.find((row) => row.key === key)?.skill;
+      } else if (effectiveSource === "skillssh") {
         const found = skillsShItems.find((s) => s.key === key);
         if (found) {
           skill = toDiscoverableSkill(found);
@@ -434,6 +461,15 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                 >
                   skills.sh
                 </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isCustom ? "default" : "ghost"}
+                  className={isCustom ? "shadow-sm" : "text-muted-foreground"}
+                  onClick={() => setSearchSource("custom")}
+                >
+                  Custom
+                </Button>
               </div>
 
               {effectiveSource === "repos" ? (
@@ -524,6 +560,68 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                     </p>
                   )}
                 </>
+              ) : isCustom ? (
+                <>
+                  <Select
+                    value={ranking}
+                    onValueChange={(value) =>
+                      setRanking(value as BestSkillsRanking)
+                    }
+                  >
+                    <SelectTrigger
+                      aria-label={t("skills.custom.ranking", "榜单")}
+                      className="w-full md:w-40 shrink-0"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BEST_SKILLS_RANKINGS.map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={dataDate} onValueChange={setDataDate}>
+                    <SelectTrigger
+                      aria-label={t("skills.custom.date", "数据日期")}
+                      className="w-full md:w-40 shrink-0"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="latest">
+                        {t("skills.custom.latest", "最新")}
+                      </SelectItem>
+                      {(history.data ?? []).map((date) => (
+                        <SelectItem key={date} value={date}>
+                          {date}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      placeholder={t("skills.searchPlaceholder")}
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      className="pl-9 pr-3"
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("skills.custom.refresh", "刷新榜单")}
+                    disabled={customRanking.isFetching || history.isFetching}
+                    onClick={reloadCustom}
+                  >
+                    <RefreshCw
+                      className={`h-4 w-4${customRanking.isFetching ? " animate-spin" : ""}`}
+                    />
+                  </Button>
+                </>
               ) : (
                 <>
                   <div className="w-full md:w-40 shrink-0">
@@ -594,7 +692,99 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
             </div>
 
             {/* 内容区域 */}
-            {effectiveSource === "repos" ? (
+            {isCustom ? (
+              <>
+                {history.isError && (
+                  <div
+                    role="alert"
+                    className="mb-4 flex items-center gap-3 text-sm text-muted-foreground"
+                  >
+                    {t(
+                      "skills.custom.historyFailed",
+                      "历史日期读取失败，仍可查看最新榜单",
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void history.refetch()}
+                    >
+                      {t("skills.skillssh.retry")}
+                    </Button>
+                  </div>
+                )}
+                {customRanking.isLoading ? (
+                  <div className="flex h-64 items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : customRanking.isError ? (
+                  <div
+                    role="alert"
+                    className="flex h-48 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
+                  >
+                    <p>{t("skills.custom.loadFailed", "榜单读取失败")}</p>
+                    <p>{String(customRanking.error)}</p>
+                    <Button variant="outline" size="sm" onClick={reloadCustom}>
+                      {t("skills.skillssh.retry")}
+                    </Button>
+                  </div>
+                ) : customRanking.data === null ? (
+                  <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
+                    <p>{t("skills.custom.missing", "该日期暂无此榜单")}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={
+                        dataDate === "latest"
+                          ? reloadCustom
+                          : () => setDataDate("latest")
+                      }
+                    >
+                      {dataDate === "latest"
+                        ? t("skills.skillssh.retry")
+                        : t("skills.custom.backToLatest", "切回最新")}
+                    </Button>
+                  </div>
+                ) : customRows.length === 0 ? (
+                  <div className="flex h-48 items-center justify-center text-muted-foreground">
+                    {searchQuery.trim()
+                      ? t("skills.noResults")
+                      : t("skills.custom.empty", "此榜单暂无数据")}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {customRows.map((row) => (
+                      <SkillCard
+                        key={row.key}
+                        skill={{
+                          ...(row.skill ?? {
+                            key: row.key,
+                            name: row.name,
+                            description: row.description,
+                            directory: "",
+                            repoOwner: "",
+                            repoName: "",
+                            repoBranch: "main",
+                            readmeUrl: row.url,
+                          }),
+                          key: row.key,
+                          installed: Boolean(
+                            row.skill && isSkillsShInstalled(row.skill),
+                          ),
+                        }}
+                        ranking={{
+                          rank: row.rank,
+                          platform: row.platform,
+                          metric: row.metric,
+                        }}
+                        viewOnly={!row.skill}
+                        onInstall={handleInstall}
+                        onUninstall={handleUninstall}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : effectiveSource === "repos" ? (
               /* ===== 仓库模式 ===== */
               loading ? (
                 <div className="flex items-center justify-center h-64">
