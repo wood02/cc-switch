@@ -16,7 +16,7 @@ fn fixture() -> (cc_switch_lib::AppState, InstalledSkill, std::path::PathBuf) {
         fs::remove_dir_all(&pi_root).unwrap();
     }
     std::env::set_var("PI_CODING_AGENT_DIR", &pi_root);
-    let path = ensure_test_home().join(".cc-switch/skills/example");
+    let path = ensure_test_home().join(".mskills/skills/example");
     fs::create_dir_all(&path).unwrap();
     fs::write(path.join("SKILL.md"), ORIGINAL).unwrap();
     fs::write(path.join("script.py"), "original script").unwrap();
@@ -170,7 +170,7 @@ fn failed_backup_keeps_the_original_file() {
     let (state, skill, path) = fixture();
     let document = SkillService::read_skill_document(&state.db, &skill.id).unwrap();
     fs::write(
-        ensure_test_home().join(".cc-switch/skill-backups"),
+        ensure_test_home().join(".mskills/skill-backups"),
         "blocked",
     )
     .unwrap();
