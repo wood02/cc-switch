@@ -6604,7 +6604,7 @@ mod tests {
             .expect("migrate away from alias");
         let new_source = temp
             .path()
-            .join(".cc-switch")
+            .join(".mskills")
             .join("skills")
             .join("test-skill");
         let pi_skill = temp
@@ -6719,7 +6719,7 @@ mod tests {
             .join("test-skill");
         fs::create_dir_all(pi_skill.parent().expect("Pi skills directory"))
             .expect("create Pi skills directory");
-        std::os::unix::fs::symlink(Path::new("../../.cc-switch/skills/test-skill"), &pi_skill)
+        std::os::unix::fs::symlink(Path::new("../../.mskills/skills/test-skill"), &pi_skill)
             .expect("create relative Pi symlink");
 
         let result = SkillService::migrate_storage(&db, SkillStorageLocation::Unified)
@@ -7011,7 +7011,7 @@ mod tests {
                 ("weread-skills", "skills", "."),
             ] {
                 let home = tempdir().expect("home");
-                let config_dir = home.path().join(".cc-switch");
+                let config_dir = home.path().join(".mskills");
                 fs::create_dir_all(&config_dir).expect("isolated config directory");
                 // Keep Windows' legacy-HOME fallback out of this destructive test.
                 fs::File::create(config_dir.join("cc-switch.db"))
