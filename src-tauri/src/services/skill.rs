@@ -2285,6 +2285,7 @@ impl SkillService {
         let agents_lock = parse_agents_lock();
         let mut imported = Vec::new();
         let mut skipped_mcode = Vec::new();
+        let mut not_enabled = Vec::new();
 
         // 将 lock 文件中发现的仓库保存到 skill_repos
         save_repos_from_lock(
@@ -2394,6 +2395,24 @@ impl SkillService {
                 }
             }
 
+            // 勾选的应用里还没有这个 Skill（它是在别处发现的）：导入时就投影过去。
+            // 只存标志的话，界面显示已启用、应用却读不到，要等下次切换供应商才补上。
+            // 已经在应用目录里的保持原样；投影失败就不记这个应用的启用，
+            // 让库里的标志始终等于磁盘上的事实。
+            for app in AppType::all() {
+                if matches!(app, AppType::Pi | AppType::Mcode)
+                    || !apps.is_enabled_for(&app)
+                    || Self::skill_exists_in_app(&dir_name, &app)
+                {
+                    continue;
+                }
+                if let Err(error) = Self::sync_to_app_dir(&dir_name, &app) {
+                    log::warn!("导入 Skill {dir_name} 时同步到 {app:?} 失败: {error:#}");
+                    apps.set_enabled_for(&app, false);
+                    not_enabled.push(format!("{dir_name} ({}): {error:#}", app.as_str()));
+                }
+            }
+
             // 从 lock 文件提取仓库信息
             let (id, repo_owner, repo_name, repo_branch, readme_url) =
                 build_repo_info_from_lock(&agents_lock, &dir_name);
@@ -2426,13 +2445,24 @@ impl SkillService {
 
         log::info!("成功导入 {} 个 Skills", imported.len());
 
-        if skipped_mcode.is_empty() {
+        let mut problems = Vec::new();
+        if !skipped_mcode.is_empty() {
+            problems.push(format!(
+                "skipped MiniMax Code entries: {}",
+                skipped_mcode.join("; ")
+            ));
+        }
+        if !not_enabled.is_empty() {
+            problems.push(format!("could not enable: {}", not_enabled.join("; ")));
+        }
+
+        if problems.is_empty() {
             Ok(imported)
         } else {
             Err(anyhow!(
-                "Imported {} Skills; skipped MiniMax Code entries: {}",
+                "Imported {} Skills; {}",
                 imported.len(),
-                skipped_mcode.join("; ")
+                problems.join("; ")
             ))
         }
     }
@@ -2857,7 +2887,9 @@ impl SkillService {
 
     /// Caller must hold either the Skills state read or write guard.
     fn sync_to_app_unlocked(db: &Arc<Database>, app: &AppType) -> Result<()> {
-        if matches!(app, AppType::ClaudeDesktop | AppType::Pi) {
+        // OpenClaw 不支持 Skills，`~/.openclaw/skills` 归它自己：里面和受管 Skill 同名的
+        // 真实目录不能被当成「已关掉的投影」删掉（移植自 v4 081fdd4d）。
+        if matches!(app, AppType::ClaudeDesktop | AppType::OpenClaw | AppType::Pi) {
             return Ok(());
         }
 
@@ -5731,6 +5763,91 @@ mod tests {
             .contains("external"));
     }
 
+    #[test]
+    #[serial_test::serial]
+    fn import_deploys_the_skill_to_selected_apps_that_do_not_have_it() {
+        let temp = tempdir().unwrap();
+        let _home = TestHomeGuard::set(temp.path());
+        let _location = StorageLocationGuard::set(SkillStorageLocation::CcSwitch);
+        let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+        let db = Arc::new(Database::memory().unwrap());
+        let app_copy = |app: AppType| {
+            SkillService::get_app_skills_dir(&app)
+                .unwrap()
+                .join("test-skill")
+        };
+        // 只在 Claude 里发现，导入时另外勾了 Codex 和 Gemini。
+        write_skill(&app_copy(AppType::Claude), "found-in-claude");
+
+        let imported = SkillService::import_from_apps(
+            &db,
+            vec![ImportSkillSelection {
+                directory: "test-skill".into(),
+                apps: SkillApps {
+                    claude: true,
+                    codex: true,
+                    gemini: true,
+                    ..Default::default()
+                },
+            }],
+        )
+        .unwrap();
+
+        assert!(imported[0].apps.codex && imported[0].apps.gemini);
+        for app in [AppType::Codex, AppType::Gemini] {
+            assert!(
+                fs::read_to_string(app_copy(app.clone()).join("SKILL.md"))
+                    .unwrap()
+                    .contains("found-in-claude"),
+                "{app:?} must have the skill right after import"
+            );
+        }
+        // 没勾的应用不写；发现它的地方保持原样（仍是真实目录，不换成链接）。
+        assert!(!app_copy(AppType::OpenCode).exists());
+        assert!(!SkillService::is_symlink(&app_copy(AppType::Claude)));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn import_does_not_record_an_app_the_skill_could_not_be_deployed_to() {
+        let temp = tempdir().unwrap();
+        let _home = TestHomeGuard::set(temp.path());
+        let _location = StorageLocationGuard::set(SkillStorageLocation::CcSwitch);
+        let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+        let db = Arc::new(Database::memory().unwrap());
+        write_skill(
+            &SkillService::get_app_skills_dir(&AppType::Claude)
+                .unwrap()
+                .join("test-skill"),
+            "found-in-claude",
+        );
+        // Codex 的 skills 路径被一个文件占着，目录建不出来。
+        let codex_skills = SkillService::get_app_skills_dir(&AppType::Codex).unwrap();
+        fs::create_dir_all(codex_skills.parent().unwrap()).unwrap();
+        fs::write(&codex_skills, "not a directory").unwrap();
+
+        let error = SkillService::import_from_apps(
+            &db,
+            vec![ImportSkillSelection {
+                directory: "test-skill".into(),
+                apps: SkillApps {
+                    claude: true,
+                    codex: true,
+                    ..Default::default()
+                },
+            }],
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("Imported 1 Skills"), "{error}");
+        assert!(error.contains("test-skill (codex)"), "{error}");
+        let installed = db.get_all_installed_skills().unwrap();
+        assert_eq!(installed.len(), 1);
+        assert!(installed[0].apps.claude);
+        assert!(!installed[0].apps.codex);
+    }
+
     #[tokio::test]
     #[ignore = "downloads a real upstream Skill to verify the complete update workflow"]
     #[serial_test::serial]
@@ -6821,6 +6938,33 @@ mod tests {
         assert!(
             app_dir.join("good-skill").exists(),
             "the healthy skill must still be synced despite the poisoned row"
+        );
+    }
+
+    /// OpenClaw 不支持 Skills，`~/.openclaw/skills` 里和受管 Skill 同名的真实目录不能被删。
+    #[test]
+    #[serial_test::serial]
+    fn sync_to_app_leaves_openclaw_skills_dir_alone() {
+        let home = tempdir().expect("home");
+        let _home = TestHomeGuard::set(home.path());
+        let ssot_dir = SkillService::get_ssot_dir().expect("ssot dir");
+        write_skill(&ssot_dir.join("shared-name"), "managed copy");
+
+        let openclaw_dir = SkillService::get_app_skills_dir(&AppType::OpenClaw).expect("dir");
+        let own_skill = openclaw_dir.join("shared-name").join("SKILL.md");
+        fs::create_dir_all(own_skill.parent().unwrap()).unwrap();
+        fs::write(&own_skill, "openclaw's own skill").unwrap();
+
+        let db = std::sync::Arc::new(Database::memory().expect("memory db"));
+        let mut skill = poisoned_skill("owner/repo:shared", "shared-name");
+        skill.name = "shared".to_string();
+        skill.apps = SkillApps::only(&AppType::Claude);
+        db.save_skill(&skill).expect("seed row");
+
+        SkillService::sync_to_app(&db, &AppType::OpenClaw).expect("no-op sync");
+        assert_eq!(
+            fs::read_to_string(&own_skill).unwrap(),
+            "openclaw's own skill"
         );
     }
 
