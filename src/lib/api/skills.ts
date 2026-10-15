@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { AppId } from "@/lib/api/types";
+import type { BestSkillsRanking } from "@/lib/bestSkills";
 
 export type AppType =
   | "claude"
@@ -269,6 +270,17 @@ export const skillsApi = {
     page: number,
   ): Promise<SkillsShLeaderboardResult> {
     return await invoke("get_skills_sh_leaderboard", { view, page });
+  },
+
+  async getBestSkillsDates(): Promise<string[]> {
+    return await invoke("get_best_skills_dates");
+  },
+
+  async getBestSkillsRanking(
+    ranking: BestSkillsRanking,
+    date: string,
+  ): Promise<string | null> {
+    return await invoke("get_best_skills_ranking", { ranking, date });
   },
 
   // ========== 兼容旧 API ==========

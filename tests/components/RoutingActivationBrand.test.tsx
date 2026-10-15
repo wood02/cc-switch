@@ -22,9 +22,9 @@ describe("RoutingActivationBrand", () => {
     expect(
       screen.getByTestId("routing-activation-particles"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "CC Switch" })).toHaveClass(
-      "text-emerald-500",
-    );
+    expect(
+      screen.getByRole("img", { name: "MSkills" }).closest("a"),
+    ).toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(1_000);

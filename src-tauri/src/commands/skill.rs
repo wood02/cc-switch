@@ -213,6 +213,23 @@ pub async fn get_skills_sh_leaderboard(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn get_best_skills_dates() -> Result<Vec<String>, String> {
+    crate::services::best_skills::dates()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_best_skills_ranking(
+    ranking: String,
+    date: String,
+) -> Result<Option<String>, String> {
+    crate::services::best_skills::ranking(&ranking, &date)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ========== 兼容旧 API 的命令 ==========
 
 /// 获取技能列表（兼容旧 API）
