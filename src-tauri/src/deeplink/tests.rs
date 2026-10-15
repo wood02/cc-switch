@@ -1012,7 +1012,7 @@ fn link_with(app: &str, param: &str, raw_value: &str) -> String {
     let query: String = url::form_urlencoded::Serializer::new(String::new())
         .extend_pairs(params)
         .finish();
-    format!("ccswitch://v1/import?{query}")
+    format!("mskills://v1/import?{query}")
 }
 
 #[test]
@@ -1066,7 +1066,7 @@ fn test_dynamic_syntax_guard_also_covers_values_from_config_and_direct_requests(
     // config 里补来的 Key 在合并时就拒绝
     let config = BASE64_STANDARD.encode(r#"{"apiKey":"{file:~/.aws/credentials}"}"#);
     let url = format!(
-        "ccswitch://v1/import?resource=provider&app=opencode&name=Example&endpoint=https%3A%2F%2Fapi.example.com%2Fv1&model=m&config={config}"
+        "mskills://v1/import?resource=provider&app=opencode&name=Example&endpoint=https%3A%2F%2Fapi.example.com%2Fv1&model=m&config={config}"
     );
     let request = parse_deeplink_url(&url).expect("URL params themselves are fine");
     assert!(parse_and_merge_config(&request).is_err());
