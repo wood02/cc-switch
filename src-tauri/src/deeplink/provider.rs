@@ -139,11 +139,53 @@ pub fn import_provider_from_deeplink(
     Ok(provider_id)
 }
 
+/// 累加式应用读配置时会解释的字符串写法，链接带了就拒绝导入。
+///
+/// - OpenCode：`{env:NAME}` 读环境变量，`{file:path}` 读本机文件。
+/// - OpenClaw、Hermes：`${NAME}` 读环境变量。
+///
+/// 链接是不可信输入：这些写法会让客户端把本机的密钥、文件内容随请求发到链接给的地址。
+/// 确认框把 Key 打码显示，用户也看不出来，所以在后端拒绝。
+/// 名称、地址、Key、模型都会写进这些应用的配置，都要查。
+pub(super) fn check_link_values(
+    app_type: &AppType,
+    request: &DeepLinkImportRequest,
+) -> Result<(), AppError> {
+    if !app_type.is_additive_mode() {
+        return Ok(());
+    }
+    let fields = [
+        ("name", request.name.as_deref()),
+        ("endpoint", request.endpoint.as_deref()),
+        ("apiKey", request.api_key.as_deref()),
+        ("model", request.model.as_deref()),
+    ];
+    for (field, value) in fields {
+        let Some(value) = value else { continue };
+        if has_dynamic_reference(value) {
+            return Err(AppError::InvalidInput(format!(
+                "The link's '{field}' uses syntax that {} would expand into an environment \
+                 variable or a local file; it cannot be imported from a link. Add the provider \
+                 manually instead.",
+                app_type.as_str()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// 值里有没有环境变量或文件引用：`${` 和 OpenCode 的 `{env:` / `{file:`。
+/// shortcut: v3.20.4 的深链接不支持 Pi，没移植 v4 对 Pi 的 `!命令` 和 `$NAME` 检查；放开 Pi 时一并补上。
+fn has_dynamic_reference(value: &str) -> bool {
+    value.contains("${") || value.contains("{env:") || value.contains("{file:")
+}
+
 /// Build a Provider structure from a deep link request
 pub(crate) fn build_provider_from_request(
     app_type: &AppType,
     request: &DeepLinkImportRequest,
 ) -> Result<Provider, AppError> {
+    check_link_values(app_type, request)?;
     let settings_config = match app_type {
         AppType::Claude | AppType::ClaudeDesktop => build_claude_settings(request),
         AppType::Codex => build_codex_settings(request),
@@ -658,6 +700,10 @@ pub fn parse_and_merge_config(
         // Additive mode apps use JSON config directly; pass through as-is
         "openclaw" | "opencode" | "hermes" => {
             merge_additive_config(&mut merged, &config_value)?;
+            // 从 config 里补来的地址和 Key 同样要查，让确认框当场报错
+            if let Ok(app_type) = AppType::from_str(request.app.as_deref().unwrap_or("")) {
+                check_link_values(&app_type, &merged)?;
+            }
         }
         "" => {
             // No app specified, skip merging

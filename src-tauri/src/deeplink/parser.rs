@@ -142,7 +142,7 @@ fn parse_provider_deeplink(
         .get("usageAutoInterval")
         .and_then(|v| v.parse::<u64>().ok());
 
-    Ok(DeepLinkImportRequest {
+    let request = DeepLinkImportRequest {
         version,
         resource,
         app: Some(app),
@@ -173,7 +173,17 @@ fn parse_provider_deeplink(
         usage_access_token,
         usage_user_id,
         usage_auto_interval,
-    })
+    };
+    // 累加式应用会把某些写法当成环境变量或文件引用，解析阶段就拒绝
+    if let Ok(app_type) = request
+        .app
+        .as_deref()
+        .unwrap_or("")
+        .parse::<crate::AppType>()
+    {
+        super::provider::check_link_values(&app_type, &request)?;
+    }
+    Ok(request)
 }
 
 /// Parse prompt deep link parameters
