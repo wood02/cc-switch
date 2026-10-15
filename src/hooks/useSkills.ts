@@ -18,6 +18,7 @@ import {
 import type { AppId } from "@/lib/api/types";
 import { mergeImportedSkills } from "@/hooks/useSkills.helpers";
 import { runSequentialBulkAction } from "@/lib/utils/sequentialBulkAction";
+import { parseBestSkills, type BestSkillsRanking } from "@/lib/bestSkills";
 
 /**
  * 查询所有已安装的 Skills
@@ -393,6 +394,34 @@ export function useSkillsShLeaderboard(
       lastPage.hasMore ? pageParam + 1 : undefined,
     enabled,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ========== Custom 榜单 ==========
+
+export function useBestSkillsDates(enabled: boolean) {
+  return useQuery({
+    queryKey: ["skills", "bestSkills", "dates"],
+    queryFn: () => skillsApi.getBestSkillsDates(),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useBestSkillsRanking(
+  ranking: BestSkillsRanking,
+  date: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["skills", "bestSkills", "ranking", ranking, date],
+    queryFn: async () => {
+      const csv = await skillsApi.getBestSkillsRanking(ranking, date);
+      return csv === null ? null : parseBestSkills(csv, ranking);
+    },
+    enabled,
+    staleTime: date === "latest" ? 0 : 5 * 60 * 1000,
+    retry: false,
   });
 }
 

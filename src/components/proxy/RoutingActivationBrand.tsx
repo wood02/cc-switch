@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { cn } from "@/lib/utils";
+import appIcon from "@/assets/icons/mskills-icon.png";
 
 const BURST_LIFETIME_MS = 980;
 
@@ -26,8 +26,7 @@ interface RoutingActivationBrandProps {
 }
 
 /**
- * Keeps the brand's existing blue/emerald status semantics, then adds a
- * short-lived confirmation burst only when the current app successfully
+ * Adds a short-lived confirmation burst only when the current app successfully
  * transitions from direct mode to route takeover.
  */
 export function RoutingActivationBrand({
@@ -84,16 +83,8 @@ export function RoutingActivationBrand({
         />
       )}
 
-      <motion.a
-        href="https://ccswitch.io"
-        target="_blank"
-        rel="noreferrer"
-        className={cn(
-          "relative z-10 text-xl font-semibold transition-colors duration-500",
-          active
-            ? "text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300"
-            : "text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300",
-        )}
+      <motion.span
+        className="relative z-10 inline-flex"
         animate={
           showBurst
             ? {
@@ -122,8 +113,13 @@ export function RoutingActivationBrand({
             : { duration: 0.28, ease: [0.22, 1, 0.36, 1] }
         }
       >
-        CC Switch
-      </motion.a>
+        <img
+          src={appIcon}
+          alt="MSkills"
+          className="h-10 w-10 object-contain"
+          draggable={false}
+        />
+      </motion.span>
 
       {showBurst && (
         <motion.span

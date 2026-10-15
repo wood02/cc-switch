@@ -2,6 +2,8 @@ import { createRef } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import type { BestSkillsRow, BestSkillsRanking } from "@/lib/bestSkills";
+import { settingsApi } from "@/lib/api";
 
 import {
   SkillsPage,
@@ -23,6 +25,18 @@ let skillReposMock: SkillRepo[] = [];
 const refetchDiscoverableMock = vi.fn();
 const fetchLeaderboardPageMock = vi.fn();
 const refetchLeaderboardMock = vi.fn();
+const refetchCustomMock = vi.fn();
+const refetchHistoryMock = vi.fn();
+let historyDatesMock: string[] = [];
+let historyErrorMock = false;
+const customRankingCache = new Map<
+  string,
+  {
+    data?: BestSkillsRow[] | null;
+    isError?: boolean;
+    error?: Error;
+  }
+>();
 const leaderboardCache = new Map<
   SkillsShLeaderboardView,
   {
@@ -75,6 +89,20 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/useSkills", () => ({
+  useBestSkillsDates: () => ({
+    data: historyDatesMock,
+    isError: historyErrorMock,
+    isFetching: false,
+    refetch: refetchHistoryMock,
+  }),
+  useBestSkillsRanking: (ranking: BestSkillsRanking, date: string) => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    refetch: refetchCustomMock,
+    ...customRankingCache.get(`${ranking}:${date}`),
+  }),
   useDiscoverableSkills: () => ({
     data: discoverableSkillsMock,
     isLoading: false,
@@ -155,6 +183,19 @@ const makeSkillRepo = (overrides: Partial<SkillRepo> = {}): SkillRepo => ({
   ...overrides,
 });
 
+const makeCustomRow = (
+  overrides: Partial<BestSkillsRow> = {},
+): BestSkillsRow => ({
+  key: "custom-row",
+  rank: 1,
+  name: "Custom Skill",
+  description: "A reusable skill",
+  metric: { icon: "award", label: "综合分", value: "99" },
+  platform: "skills.sh",
+  skill: makeDiscoverableSkill({ name: "Custom Skill" }),
+  ...overrides,
+});
+
 describe("SkillsPage - skills.sh install (regression)", () => {
   beforeEach(() => {
     installMutateAsyncMock.mockReset();
@@ -164,8 +205,132 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     refetchDiscoverableMock.mockReset();
     searchCache.clear();
     leaderboardCache.clear();
+    customRankingCache.clear();
+    historyDatesMock = [];
+    historyErrorMock = false;
+    refetchCustomMock.mockReset();
+    refetchHistoryMock.mockReset();
     fetchLeaderboardPageMock.mockReset();
     refetchLeaderboardMock.mockReset();
+  });
+
+  it("installs a Custom skill through the existing v3 installer", async () => {
+    const row = makeCustomRow();
+    customRankingCache.set("best-100:latest", { data: [row] });
+    const onSourceChange = vi.fn();
+    render(<SkillsPage initialApp="codex" onSourceChange={onSourceChange} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    expect(onSourceChange).toHaveBeenLastCalledWith("custom");
+    expect(screen.getByText("Custom Skill")).toBeInTheDocument();
+    expect(screen.getByLabelText("#1")).toBeInTheDocument();
+    expect(screen.getByTitle("综合分 99")).toHaveTextContent("99");
+    await user.click(screen.getByRole("button", { name: "skills.install" }));
+    expect(installMutateAsyncMock).toHaveBeenCalledWith({
+      currentApp: "codex",
+      skill: row.skill,
+    });
+  });
+
+  it("switches Custom rankings and dates without mixing results", async () => {
+    historyDatesMock = ["2026-10-14"];
+    customRankingCache.set("best-100:latest", { data: [makeCustomRow()] });
+    customRankingCache.set("trending-7d:latest", {
+      data: [
+        makeCustomRow({
+          name: "Weekly Skill",
+          skill: makeDiscoverableSkill({ name: "Weekly Skill" }),
+        }),
+      ],
+    });
+    customRankingCache.set("trending-7d:2026-10-14", {
+      data: [
+        makeCustomRow({
+          name: "History Skill",
+          skill: makeDiscoverableSkill({ name: "History Skill" }),
+        }),
+      ],
+    });
+    render(<SkillsPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    await user.click(screen.getByRole("combobox", { name: "榜单" }));
+    await user.click(screen.getByRole("option", { name: "近七天趋势" }));
+    expect(screen.getByText("Weekly Skill")).toBeInTheDocument();
+    expect(screen.queryByText("Custom Skill")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "数据日期" }));
+    await user.click(screen.getByRole("option", { name: "2026-10-14" }));
+    expect(screen.getByText("History Skill")).toBeInTheDocument();
+    expect(screen.queryByText("Weekly Skill")).not.toBeInTheDocument();
+  });
+
+  it("offers a return to latest when a snapshot is missing", async () => {
+    historyDatesMock = ["2026-10-14"];
+    customRankingCache.set("best-100:latest", { data: [makeCustomRow()] });
+    customRankingCache.set("best-100:2026-10-14", { data: null });
+    render(<SkillsPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    await user.click(screen.getByRole("combobox", { name: "数据日期" }));
+    await user.click(screen.getByRole("option", { name: "2026-10-14" }));
+    expect(screen.getByText("该日期暂无此榜单")).toBeInTheDocument();
+    expect(screen.queryByText("Custom Skill")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "切回最新" }));
+    expect(screen.getByText("Custom Skill")).toBeInTheDocument();
+  });
+
+  it("shows ranking errors and retries the ranking and date index", async () => {
+    customRankingCache.set("best-100:latest", {
+      isError: true,
+      error: new Error("Unavailable"),
+    });
+    render(<SkillsPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Unavailable");
+    await user.click(
+      screen.getByRole("button", { name: "skills.skillssh.retry" }),
+    );
+    expect(refetchCustomMock).toHaveBeenCalledTimes(1);
+    expect(refetchHistoryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps latest results usable when the date index fails", async () => {
+    historyErrorMock = true;
+    customRankingCache.set("best-100:latest", { data: [makeCustomRow()] });
+    render(<SkillsPage />);
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Custom" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "历史日期读取失败，仍可查看最新榜单",
+    );
+    expect(screen.getByText("Custom Skill")).toBeInTheDocument();
+  });
+
+  it("only offers viewing for non-installable Custom rows", async () => {
+    const open = vi
+      .spyOn(settingsApi, "openExternal")
+      .mockResolvedValue(undefined);
+    customRankingCache.set("best-100:latest", {
+      data: [
+        makeCustomRow({
+          name: "Vendor",
+          skill: undefined,
+          url: "https://github.com/owner/repo",
+        }),
+      ],
+    });
+    render(<SkillsPage />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    expect(
+      screen.queryByRole("button", { name: "skills.install" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "skills.view" }));
+    expect(open).toHaveBeenCalledWith("https://github.com/owner/repo");
+    expect(installMutateAsyncMock).not.toHaveBeenCalled();
+    open.mockRestore();
   });
 
   it("installs the second skill when two results share the same directory", async () => {
@@ -372,8 +537,8 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     ).toEqual(["manage-repos"]);
   });
 
-  it("defaults to the public leaderboard and installs by the selected repository key", async () => {
-    leaderboardCache.set("all-time", {
+  it("defaults to the 24-hour leaderboard and installs by the selected repository key", async () => {
+    leaderboardCache.set("trending", {
       data: {
         pages: [
           {
@@ -428,15 +593,15 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     }
     render(<SkillsPage />);
     const user = userEvent.setup();
-    expect(screen.getByText("Total Skill")).toBeInTheDocument();
+    expect(screen.getByText("Trending Skill")).toBeInTheDocument();
     await user.click(
       screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
     );
     await user.click(
-      screen.getByRole("option", { name: "skills.skillssh.sortTrending" }),
+      screen.getByRole("option", { name: "skills.skillssh.sortAllTime" }),
     );
-    expect(screen.getByText("Trending Skill")).toBeInTheDocument();
-    expect(screen.queryByText("Total Skill")).not.toBeInTheDocument();
+    expect(screen.getByText("Total Skill")).toBeInTheDocument();
+    expect(screen.queryByText("Trending Skill")).not.toBeInTheDocument();
     await user.click(
       screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
     );
@@ -444,15 +609,15 @@ describe("SkillsPage - skills.sh install (regression)", () => {
       screen.getByRole("option", { name: "skills.skillssh.sortHot" }),
     );
     expect(screen.getByText("Hot Skill")).toBeInTheDocument();
-    expect(screen.queryByText("Trending Skill")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total Skill")).not.toBeInTheDocument();
   });
 
   it("returns to the leaderboard when clearing a submitted search", async () => {
-    leaderboardCache.set("all-time", {
+    leaderboardCache.set("trending", {
       data: {
         pages: [
           {
-            skills: [makeSkillsShSkill({ name: "Total Skill" })],
+            skills: [makeSkillsShSkill({ name: "Trending Skill" })],
             totalCount: 1,
             hasMore: false,
           },
@@ -476,7 +641,7 @@ describe("SkillsPage - skills.sh install (regression)", () => {
       screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
     ).toBeDisabled();
     await user.clear(input);
-    expect(screen.getByText("Total Skill")).toBeInTheDocument();
+    expect(screen.getByText("Trending Skill")).toBeInTheDocument();
     expect(screen.queryByText("React Skill")).not.toBeInTheDocument();
     expect(
       screen.getByRole("combobox", { name: "skills.skillssh.sortLabel" }),
@@ -485,7 +650,7 @@ describe("SkillsPage - skills.sh install (regression)", () => {
 
   it("preserves loaded rows after a pagination error and offers retry", async () => {
     const skill = makeSkillsShSkill({ name: "Loaded Skill" });
-    leaderboardCache.set("all-time", {
+    leaderboardCache.set("trending", {
       data: {
         pages: [
           { skills: [skill], totalCount: 2, hasMore: true },

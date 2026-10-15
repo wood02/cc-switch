@@ -109,8 +109,19 @@ module.exports = {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "medal-shine": "medalShine 4s ease-in-out infinite",
+        "medal-shine-once": "medalShineOnce 0.8s ease-out",
       },
       keyframes: {
+        // Sweep across in the first 20% of the cycle, then rest.
+        medalShine: {
+          "0%": { transform: "translateX(0)" },
+          "20%, 100%": { transform: "translateX(200%)" },
+        },
+        medalShineOnce: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(200%)" },
+        },
         fadeIn: {
           "0%": {
             opacity: "0",
