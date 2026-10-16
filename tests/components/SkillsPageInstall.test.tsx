@@ -279,7 +279,7 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     expect(screen.getByText("Custom Skill")).toBeInTheDocument();
   });
 
-  it("shows ranking errors and retries the ranking and date index", async () => {
+  it("hides raw ranking errors and retries the ranking and date index", async () => {
     customRankingCache.set("best-100:latest", {
       isError: true,
       error: new Error("Unavailable"),
@@ -287,7 +287,8 @@ describe("SkillsPage - skills.sh install (regression)", () => {
     render(<SkillsPage />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Custom" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent("榜单读取失败");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("Unavailable");
     await user.click(
       screen.getByRole("button", { name: "skills.skillssh.retry" }),
     );

@@ -54,9 +54,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ImeSafeInput } from "@/components/ui/ime-safe-input";
 
 const IMPORT_SKILLS_APP_IDS = SKILLS_APP_IDS.filter((app) => app !== "pi");
+
+const getSkillSource = (skill: InstalledSkill) =>
+  skill.repoOwner && skill.repoName
+    ? `${skill.repoOwner}/${skill.repoName}`
+    : "local";
 
 interface UnifiedSkillsPanelProps {
   onOpenDiscovery: () => void;
@@ -115,6 +127,8 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editPreview, setEditPreview] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // "all" | "local" | "owner/repo"
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [writePending, setWritePending] = useState(false);
   const writeLockRef = React.useRef(false);
   const checkUpdatesLockRef = React.useRef(false);
@@ -235,37 +249,41 @@ const UnifiedSkillsPanel = React.forwardRef<
     return map;
   }, [applicableSkillUpdates]);
 
-  const enabledCounts = useMemo(() => {
-    const counts = {
-      claude: 0,
-      "claude-desktop": 0,
-      codex: 0,
-      gemini: 0,
-      grokbuild: 0,
-      opencode: 0,
-      openclaw: 0,
-      hermes: 0,
-      pi: 0,
-      mcode: 0,
-    };
-    if (!skills) return counts;
-    skills.forEach((skill) => {
-      for (const app of SKILLS_APP_IDS) {
-        if (skill.apps[app]) {
-          counts[app]++;
-        }
-      }
-    });
-    return counts;
-  }, [skills]);
+  const repoSources = useMemo(
+    () =>
+      [
+        ...new Set(
+          (skills ?? []).map(getSkillSource).filter((s) => s !== "local"),
+        ),
+      ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+    [skills],
+  );
+  const hasLocalSkills = (skills ?? []).some(
+    (skill) => getSkillSource(skill) === "local",
+  );
+  // 选中的仓库被卸载干净后回落到全部，避免列表莫名为空
+  const activeSourceFilter =
+    sourceFilter === "local"
+      ? hasLocalSkills
+        ? "local"
+        : "all"
+      : repoSources.includes(sourceFilter)
+        ? sourceFilter
+        : "all";
 
   const filteredSkills = useMemo(() => {
     if (!skills) return [];
 
+    const sourceSkills =
+      activeSourceFilter === "all"
+        ? skills
+        : skills.filter(
+            (skill) => getSkillSource(skill) === activeSourceFilter,
+          );
     const query = searchQuery.trim().toLocaleLowerCase();
-    if (!query) return skills;
+    if (!query) return sourceSkills;
 
-    return skills.filter((skill) => {
+    return sourceSkills.filter((skill) => {
       const searchableValues = [
         skill.name,
         skill.id,
@@ -282,7 +300,31 @@ const UnifiedSkillsPanel = React.forwardRef<
         value?.toLocaleLowerCase().includes(query),
       );
     });
-  }, [searchQuery, skills]);
+  }, [activeSourceFilter, searchQuery, skills]);
+
+  // 计数和批量开关都只作用于当前筛选结果
+  const enabledCounts = useMemo(() => {
+    const counts = {
+      claude: 0,
+      "claude-desktop": 0,
+      codex: 0,
+      gemini: 0,
+      grokbuild: 0,
+      opencode: 0,
+      openclaw: 0,
+      hermes: 0,
+      pi: 0,
+      mcode: 0,
+    };
+    filteredSkills.forEach((skill) => {
+      for (const app of SKILLS_APP_IDS) {
+        if (skill.apps[app]) {
+          counts[app]++;
+        }
+      }
+    });
+    return counts;
+  }, [filteredSkills]);
 
   const pendingApp = bulkToggleAppMutation.isPending
     ? bulkToggleAppMutation.variables?.app
@@ -305,7 +347,7 @@ const UnifiedSkillsPanel = React.forwardRef<
   const handleToggleAll = async (app: AppId, enabled: boolean) => {
     if (!skills || !beginWrite()) return;
 
-    const ids = skills
+    const ids = filteredSkills
       .filter((skill) => Boolean(skill.apps[app]) !== enabled)
       .map((skill) => skill.id);
     if (ids.length === 0) {
@@ -676,10 +718,17 @@ const UnifiedSkillsPanel = React.forwardRef<
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <AppCountBar
-            totalLabel={t("skills.installed", { count: skills?.length || 0 })}
+            totalLabel={
+              filteredSkills.length !== (skills?.length ?? 0)
+                ? t("skills.installedFiltered", {
+                    shown: filteredSkills.length,
+                    count: skills?.length ?? 0,
+                  })
+                : t("skills.installed", { count: skills?.length || 0 })
+            }
             counts={enabledCounts}
             appIds={visibleSkillAppIds}
-            totalCount={skills?.length ?? 0}
+            totalCount={filteredSkills.length}
             onToggleAll={handleToggleAll}
             pendingApp={pendingApp}
             disabled={interactionBlocked}
@@ -714,13 +763,37 @@ const UnifiedSkillsPanel = React.forwardRef<
         </div>
       </div>
 
-      <ManagementListSearch
-        value={searchQuery}
-        onValueChange={setSearchQuery}
-        placeholder={t("skills.installedSearchPlaceholder")}
-        ariaLabel={t("skills.installedSearchAriaLabel")}
-        clearLabel={t("common.clear")}
-      />
+      <div className="mb-4 flex flex-shrink-0 items-center gap-2">
+        <ManagementListSearch
+          value={searchQuery}
+          onValueChange={setSearchQuery}
+          placeholder={t("skills.installedSearchPlaceholder")}
+          ariaLabel={t("skills.installedSearchAriaLabel")}
+          clearLabel={t("common.clear")}
+          className="mb-0 min-w-0 flex-1"
+        />
+        {repoSources.length + (hasLocalSkills ? 1 : 0) > 1 && (
+          <Select value={activeSourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger
+              aria-label={t("skills.filter.repo")}
+              className="w-44 shrink-0"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-64">
+              <SelectItem value="all">{t("skills.filter.all")}</SelectItem>
+              {hasLocalSkills && (
+                <SelectItem value="local">{t("skills.local")}</SelectItem>
+              )}
+              {repoSources.map((source) => (
+                <SelectItem key={source} value={source}>
+                  {source}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
 
       <ScrollArea className="-mr-3 flex-1 min-h-0" type="auto">
         <div className="pb-24 pr-3">
@@ -747,7 +820,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                   disabled={interactionBlocked}
                   onClick={() => void handleOpenImport()}
                 >
-                  <Download className="w-4 h-4 mr-2" />
+                  <Download className="w-4 h-4" />
                   {t("skills.import")}
                 </Button>
                 <Button
@@ -755,7 +828,7 @@ const UnifiedSkillsPanel = React.forwardRef<
                   disabled={interactionBlocked}
                   onClick={handleOpenDiscovery}
                 >
-                  <Search className="w-4 h-4 mr-2" />
+                  <Sparkles className="w-4 h-4" />
                   {t("skills.discover")}
                 </Button>
               </div>

@@ -586,20 +586,16 @@ describe("UnifiedSkillsPanel", () => {
     expect(viewport).not.toContainElement(searchInput);
   });
 
-  it("enables only disabled Skills from the full list when the app state is mixed", async () => {
+  it("scopes bulk toggles to the searched Skills", async () => {
     installedSkillsMock = [
       makeInstalledSkill({
         id: "enabled-id",
         name: "Visible Skill",
         apps: { claude: true },
       }),
-      makeInstalledSkill({ id: "disabled-id-1", name: "Hidden Skill One" }),
-      makeInstalledSkill({ id: "disabled-id-2", name: "Hidden Skill Two" }),
+      makeInstalledSkill({ id: "visible-off-id", name: "Visible Skill Two" }),
+      makeInstalledSkill({ id: "hidden-id", name: "Hidden Skill" }),
     ];
-    bulkToggleSkillAppMock.mockResolvedValue({
-      succeeded: ["disabled-id-1", "disabled-id-2"],
-      failed: [],
-    });
     renderPanel();
 
     const user = userEvent.setup();
@@ -609,11 +605,73 @@ describe("UnifiedSkillsPanel", () => {
       }),
       "Visible Skill",
     );
+    expect(screen.getByText("skills.installedFiltered")).toBeInTheDocument();
     await user.click(screen.getByText("Claude:").closest("button")!);
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
-        ids: ["disabled-id-1", "disabled-id-2"],
+        ids: ["visible-off-id"],
+        app: "claude",
+        enabled: true,
+      });
+    });
+  });
+
+  it("filters by source and scopes bulk toggles to that source", async () => {
+    installedSkillsMock = [
+      makeInstalledSkill({ id: "repo-a-id", name: "Repo A Skill" }),
+      makeInstalledSkill({
+        id: "repo-b-id",
+        name: "Repo B Skill",
+        repoOwner: "other",
+        repoName: "pack",
+      }),
+      makeInstalledSkill({
+        id: "local-id",
+        name: "Local Skill",
+        repoOwner: undefined,
+        repoName: undefined,
+      }),
+      makeInstalledSkill({
+        id: "upper-id",
+        name: "Upper Skill",
+        repoOwner: "Zed",
+        repoName: "pack",
+      }),
+    ];
+    renderPanel();
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("combobox", { name: "skills.filter.repo" }),
+    );
+    // 全部、本地在前，仓库按 a-z 排序且不区分大小写
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual([
+      "skills.filter.all",
+      "skills.local",
+      "other/pack",
+      "owner/repo",
+      "Zed/pack",
+    ]);
+    await user.click(screen.getByRole("option", { name: "skills.local" }));
+
+    expect(screen.getByText("Local Skill")).toBeInTheDocument();
+    expect(screen.queryByText("Repo A Skill")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("combobox", { name: "skills.filter.repo" }),
+    );
+    await user.click(screen.getByRole("option", { name: "other/pack" }));
+
+    expect(screen.getByText("Repo B Skill")).toBeInTheDocument();
+    expect(screen.queryByText("Local Skill")).not.toBeInTheDocument();
+    await user.click(screen.getByText("Claude:").closest("button")!);
+
+    await waitFor(() => {
+      expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
+        ids: ["repo-b-id"],
         app: "claude",
         enabled: true,
       });

@@ -235,9 +235,13 @@ pub async fn get_best_skills_ranking(
     ranking: String,
     date: String,
 ) -> Result<Option<String>, String> {
+    // Upstream details (URL, data source) stay in the log, never reach the UI.
     crate::services::best_skills::ranking(&ranking, &date)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            log::warn!("ranking fetch failed: {e}");
+            "ranking unavailable".to_string()
+        })
 }
 
 // ========== 兼容旧 API 的命令 ==========

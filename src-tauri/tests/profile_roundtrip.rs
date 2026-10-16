@@ -8,7 +8,7 @@ use serde_json::json;
 
 use cc_switch_lib::{
     AppType, InstalledSkill, McpServer, McpService, ProfilePayload, ProfileScope, ProfileService,
-    Prompt, PromptService, Provider, ProviderService, SkillApps, SkillService,
+    Prompt, PromptService, Provider, ProviderService, SkillApps, SkillGroupService, SkillService,
 };
 
 #[path = "support.rs"]
@@ -814,7 +814,7 @@ fn claude_desktop_profile_scope_is_independent() {
 }
 
 #[test]
-fn apply_skills_only_restores_skills_and_leaves_the_rest_alone() {
+fn skill_group_apply_restores_skills_and_leaves_the_rest_alone() {
     let _guard = test_mutex().lock().expect("acquire test mutex");
     reset_test_fs();
     let home = ensure_test_home();
@@ -850,16 +850,24 @@ fn apply_skills_only_restores_skills_and_leaves_the_rest_alone() {
         .save_skill(&installed_skill("local:docs", "docs", false))
         .expect("save docs skill");
 
-    let combo =
-        ProfileService::create(&state, "Frontend", ProfileScope::Claude).expect("create combo");
+    let group =
+        SkillGroupService::create(&state, "Frontend", &AppType::Claude).expect("create group");
+    assert!(
+        state
+            .db
+            .get_all_profiles()
+            .expect("list profiles")
+            .is_empty(),
+        "skill group is not a project profile"
+    );
 
     ProviderService::switch(&state, AppType::Claude, "p2").expect("switch to p2");
     SkillService::toggle_app(&state.db, "local:frontend", &AppType::Claude, false)
         .expect("disable frontend");
     SkillService::toggle_app(&state.db, "local:docs", &AppType::Claude, true).expect("enable docs");
 
-    let warnings = ProfileService::apply_skills(&state, &combo.id, ProfileScope::Claude)
-        .expect("apply skills");
+    let warnings =
+        SkillGroupService::apply(&state, &group.id, &AppType::Claude).expect("apply group");
     assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
 
     let skills = state.db.get_all_installed_skills().expect("get skills");
