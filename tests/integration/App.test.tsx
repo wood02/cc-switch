@@ -673,6 +673,22 @@ describe("App integration with MSW", () => {
     expect(skillsPanelMocks.checkUpdates).toHaveBeenCalledTimes(1);
   });
 
+  it("badges the Skills button when the startup check finds updates", async () => {
+    server.use(
+      http.post("http://tauri.local/check_skill_updates", () =>
+        HttpResponse.json([
+          { id: "local:demo", name: "demo", remoteHash: "h" },
+        ]),
+      ),
+    );
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      (await screen.findAllByTitle(/skills\.updatesFound/)).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("routes the Skills discover toolbar action through the panel guard", async () => {
     localStorage.setItem("cc-switch-last-view", "skills");
     const { default: App } = await import("@/App");
