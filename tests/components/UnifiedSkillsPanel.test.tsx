@@ -753,9 +753,33 @@ describe("UnifiedSkillsPanel", () => {
     });
   });
 
-  it("blocks actions but not navigation while checking updates", async () => {
+  it("does not block actions during a background update check", async () => {
     installedSkillsMock = [makeInstalledSkill()];
     checkUpdatesFetching = true;
+    const onInteractionBlockedChange = vi.fn();
+
+    render(
+      <UnifiedSkillsPanel
+        onOpenDiscovery={() => {}}
+        currentApp="claude"
+        onInteractionBlockedChange={onInteractionBlockedChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onInteractionBlockedChange).toHaveBeenLastCalledWith(false);
+    });
+    expect(screen.getByTitle("skills.uninstall")).toBeEnabled();
+  });
+
+  it("blocks actions but not navigation while checking updates", async () => {
+    installedSkillsMock = [makeInstalledSkill()];
+    let resolveCheck!: (value: { data: never[] }) => void;
+    checkUpdatesMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
     const ref = createRef<UnifiedSkillsPanelHandle>();
     const onInteractionBlockedChange = vi.fn();
     const onNavigationBlockedChange = vi.fn();
@@ -770,6 +794,10 @@ describe("UnifiedSkillsPanel", () => {
       />,
     );
 
+    act(() => {
+      ref.current?.checkUpdates();
+    });
+
     await waitFor(() => {
       expect(onInteractionBlockedChange).toHaveBeenLastCalledWith(true);
       expect(onNavigationBlockedChange).toHaveBeenLastCalledWith(false);
@@ -781,6 +809,11 @@ describe("UnifiedSkillsPanel", () => {
       await ref.current?.openImport();
     });
     expect(scanUnmanagedMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveCheck({ data: [] });
+      await Promise.resolve();
+    });
   });
 
   it("closes the backup dialog and reports an explicit refresh failure", async () => {

@@ -135,11 +135,9 @@ const UnifiedSkillsPanel = React.forwardRef<
   const importMutation = useImportSkillsFromApps();
   const createMutation = useCreateLocalSkill();
   const installFromZipMutation = useInstallSkillsFromZip();
-  const {
-    data: skillUpdates,
-    refetch: checkUpdates,
-    isFetching: isCheckingUpdates,
-  } = useCheckSkillUpdates();
+  const { data: skillUpdates, refetch: checkUpdates } = useCheckSkillUpdates();
+  // 只有手动检查才锁界面；App 启动/定时的后台检查共用同一查询，不能拿 isFetching 判断
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const updateSkillMutation = useUpdateSkill();
   const [isUpdatingAll, setIsUpdatingAll] = useState(false);
   const visibleSkillAppIds = visibleApps
@@ -463,6 +461,7 @@ const UnifiedSkillsPanel = React.forwardRef<
       return;
     }
     checkUpdatesLockRef.current = true;
+    setIsCheckingUpdates(true);
     try {
       const result = await checkUpdates();
       const updates = result.data || [];
@@ -477,6 +476,7 @@ const UnifiedSkillsPanel = React.forwardRef<
       toast.error(t("common.error"), { description: String(error) });
     } finally {
       checkUpdatesLockRef.current = false;
+      setIsCheckingUpdates(false);
     }
   };
 
