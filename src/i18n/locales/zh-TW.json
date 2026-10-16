@@ -2643,6 +2643,7 @@
     "noInstalled": "暫無已安裝的技能",
     "noInstalledDescription": "從儲存庫發現並安裝技能，或匯入已有的技能",
     "discover": "發現技能",
+    "add": "加入",
     "import": "匯入已有",
     "importDescription": "選擇要匯入至 MSkills 統一管理的技能",
     "importSuccess": "成功匯入 {{count}} 個技能",

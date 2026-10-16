@@ -8,6 +8,7 @@ import {
   Loader2,
   Search,
   Eye,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -646,16 +647,18 @@ const UnifiedSkillsPanel = React.forwardRef<
     });
   };
 
+  const handleOpenDiscovery = () => {
+    if (
+      !checkUpdatesLockRef.current &&
+      !writeLockRef.current &&
+      !interactionBlocked
+    ) {
+      onOpenDiscovery();
+    }
+  };
+
   React.useImperativeHandle(ref, () => ({
-    openDiscovery: () => {
-      if (
-        !checkUpdatesLockRef.current &&
-        !writeLockRef.current &&
-        !interactionBlocked
-      ) {
-        onOpenDiscovery();
-      }
-    },
+    openDiscovery: handleOpenDiscovery,
     openImport: handleOpenImport,
     openCreate: () => {
       if (beginWrite()) {
@@ -736,6 +739,26 @@ const UnifiedSkillsPanel = React.forwardRef<
               <p className="text-muted-foreground text-sm">
                 {t("skills.noInstalledDescription")}
               </p>
+              {/* 导入已有收进了工具栏的添加菜单，空列表时直接给出首次使用的两个入口 */}
+              <div className="mt-4 flex justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={interactionBlocked}
+                  onClick={() => void handleOpenImport()}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {t("skills.import")}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={interactionBlocked}
+                  onClick={handleOpenDiscovery}
+                >
+                  <Search className="w-4 h-4 mr-2" />
+                  {t("skills.discover")}
+                </Button>
+              </div>
             </div>
           ) : filteredSkills.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">

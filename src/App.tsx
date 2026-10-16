@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   Loader2,
   RefreshCw,
+  ChevronDown,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Provider, VisibleApps } from "@/types";
@@ -97,6 +98,13 @@ import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { UniversalProviderPanel } from "@/components/universal";
 import { McpIcon } from "@/components/BrandIcons";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
 import {
   useDisableCurrentOmo,
@@ -1524,6 +1532,85 @@ function App() {
                 )}
                 {currentView === "skills" && (
                   <>
+                    {/* 往列表里加 Skill 的入口收进一个菜单，工具栏只留添加 / 发现 / 检查更新 */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={skillsManagementBusy}
+                          className="relative hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
+                          title={
+                            hasUnmanagedSkills
+                              ? t("skills.unmanagedAvailable")
+                              : undefined
+                          }
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          {t("skills.add")}
+                          <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-60" />
+                          {hasUnmanagedSkills && (
+                            <span
+                              className="absolute top-1 right-1 h-2 w-2 rounded-full bg-green-500"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-44">
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            unifiedSkillsPanelRef.current?.openCreate()
+                          }
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          {t("skills.create.button")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            unifiedSkillsPanelRef.current?.openInstallFromZip()
+                          }
+                        >
+                          <FolderArchive className="w-4 h-4 mr-2" />
+                          {t("skills.installFromZip.button")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            unifiedSkillsPanelRef.current?.openImport()
+                          }
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          {t("skills.import")}
+                          {hasUnmanagedSkills && (
+                            <span
+                              className="ml-auto h-2 w-2 rounded-full bg-green-500"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            unifiedSkillsPanelRef.current?.openRestoreFromBackup()
+                          }
+                        >
+                          <History className="w-4 h-4 mr-2" />
+                          {t("skills.restoreFromBackup.button")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={skillsManagementBusy}
+                      onClick={() =>
+                        unifiedSkillsPanelRef.current?.openDiscovery()
+                      }
+                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
+                    >
+                      <Search className="w-4 h-4 mr-2" />
+                      {t("skills.discover")}
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1548,77 +1635,6 @@ function App() {
                       {skillsCheckUpdatesState.isChecking
                         ? t("skills.checkingUpdates")
                         : t("skills.checkUpdates")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={skillsManagementBusy}
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openRestoreFromBackup()
-                      }
-                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
-                    >
-                      <History className="w-4 h-4 mr-2" />
-                      {t("skills.restoreFromBackup.button")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={skillsManagementBusy}
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openInstallFromZip()
-                      }
-                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
-                    >
-                      <FolderArchive className="w-4 h-4 mr-2" />
-                      {t("skills.installFromZip.button")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={skillsManagementBusy}
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openCreate()
-                      }
-                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      {t("skills.create.button")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={skillsManagementBusy}
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openImport()
-                      }
-                      className="relative hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
-                      title={
-                        hasUnmanagedSkills
-                          ? t("skills.unmanagedAvailable")
-                          : undefined
-                      }
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {t("skills.import")}
-                      {hasUnmanagedSkills && (
-                        <span
-                          className="absolute top-1 right-1 h-2 w-2 rounded-full bg-green-500"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={skillsManagementBusy}
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openDiscovery()
-                      }
-                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      {t("skills.discover")}
                     </Button>
                   </>
                 )}

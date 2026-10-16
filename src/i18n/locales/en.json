@@ -2642,6 +2642,7 @@
     "noInstalled": "No skills installed",
     "noInstalledDescription": "Discover and install skills from repositories, or import existing skills",
     "discover": "Discover Skills",
+    "add": "Add",
     "import": "Import Existing",
     "importDescription": "Select skills to import into MSkills unified management",
     "importSuccess": "Successfully imported {{count}} skills",

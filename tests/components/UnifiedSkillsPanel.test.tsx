@@ -405,7 +405,9 @@ describe("UnifiedSkillsPanel", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("skills.import")).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "skills.import" }),
+      ).toBeInTheDocument();
       expect(screen.getByText("Shared Skill")).toBeInTheDocument();
       expect(screen.getByText("/tmp/shared-skill")).toBeInTheDocument();
     });
@@ -526,6 +528,21 @@ describe("UnifiedSkillsPanel", () => {
 
     expect(screen.getByText("Searchable Name")).toBeInTheDocument();
     expect(screen.queryByText("Unrelated Skill")).not.toBeInTheDocument();
+  });
+
+  it("offers discover and import from the empty list", async () => {
+    const onOpenDiscovery = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <UnifiedSkillsPanel
+        onOpenDiscovery={onOpenDiscovery}
+        currentApp="claude"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "skills.discover" }));
+    expect(onOpenDiscovery).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "skills.import" })).toBeEnabled();
   });
 
   it("distinguishes an empty list from an installed-Skill search miss", async () => {

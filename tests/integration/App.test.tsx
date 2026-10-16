@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { http, HttpResponse } from "msw";
+import userEvent from "@testing-library/user-event";
 import { providersApi } from "@/lib/api/providers";
 import {
   resetProviderState,
@@ -26,6 +27,8 @@ const toastErrorMock = vi.fn();
 const skillsPanelMocks = vi.hoisted(() => ({
   checkUpdates: vi.fn(),
   openDiscovery: vi.fn(),
+  openInstallFromZip: vi.fn(),
+  openRestoreFromBackup: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -166,8 +169,8 @@ vi.mock("@/components/skills/UnifiedSkillsPanel", async () => {
       React.useImperativeHandle(ref, () => ({
         openDiscovery: skillsPanelMocks.openDiscovery,
         openImport: vi.fn(),
-        openInstallFromZip: vi.fn(),
-        openRestoreFromBackup: vi.fn(),
+        openInstallFromZip: skillsPanelMocks.openInstallFromZip,
+        openRestoreFromBackup: skillsPanelMocks.openRestoreFromBackup,
         checkUpdates: skillsPanelMocks.checkUpdates,
       }));
       return (
@@ -219,6 +222,8 @@ describe("App integration with MSW", () => {
     toastErrorMock.mockReset();
     skillsPanelMocks.checkUpdates.mockReset();
     skillsPanelMocks.openDiscovery.mockReset();
+    skillsPanelMocks.openInstallFromZip.mockReset();
+    skillsPanelMocks.openRestoreFromBackup.mockReset();
     localStorage.removeItem("cc-switch-last-view");
     localStorage.removeItem("cc-switch-last-app");
   });
@@ -777,5 +782,34 @@ describe("App integration with MSW", () => {
 
     expect(skillsPanelMocks.openDiscovery).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("unified-skills-panel")).toBeInTheDocument();
+  });
+
+  it("groups the Skills add actions under one toolbar menu", async () => {
+    localStorage.setItem("cc-switch-last-view", "skills");
+    const { default: App } = await import("@/App");
+    renderApp(App);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+    expect(
+      await screen.findByTestId("unified-skills-panel"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "skills.installFromZip.button" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      await screen.findByRole("button", { name: /skills\.add/ }),
+    );
+    for (const name of [
+      "skills.create.button",
+      "skills.import",
+      "skills.restoreFromBackup.button",
+    ]) {
+      expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
+    }
+    await user.click(
+      screen.getByRole("menuitem", { name: "skills.installFromZip.button" }),
+    );
+    expect(skillsPanelMocks.openInstallFromZip).toHaveBeenCalledTimes(1);
   });
 });
