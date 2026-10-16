@@ -673,20 +673,76 @@ describe("App integration with MSW", () => {
     expect(skillsPanelMocks.checkUpdates).toHaveBeenCalledTimes(1);
   });
 
-  it("offers the Profile switcher on the Skills page for apps outside a Profile group", async () => {
+  it("switches only Skills from the skill-set switcher on the Skills page", async () => {
+    const slot = <T,>(claude: T) => ({
+      claude,
+      "claude-desktop": null,
+      codex: null,
+    });
+    const combo = (id: string, name: string, skills: string[]) => ({
+      id,
+      name,
+      payload: {
+        providers: slot("p1"),
+        mcp: slot([]),
+        skills: slot(skills),
+        prompts: slot(null),
+      },
+    });
+    const skill = (id: string, claude: boolean) => ({
+      id,
+      name: id,
+      directory: id.replace("local:", ""),
+      apps: { claude, codex: false },
+      installedAt: 1,
+    });
+    const applied: unknown[] = [];
+    let fullApplyCalls = 0;
+    server.use(
+      http.post("http://tauri.local/list_profiles", () =>
+        HttpResponse.json({
+          profiles: [
+            combo("fe", "Frontend", ["local:a"]),
+            combo("docs", "Docs", ["local:b"]),
+          ],
+          currentIds: { claude: null, claudeDesktop: null, codex: null },
+        }),
+      ),
+      http.post("http://tauri.local/get_installed_skills", () =>
+        HttpResponse.json([skill("local:a", true), skill("local:b", false)]),
+      ),
+      http.post(
+        "http://tauri.local/apply_profile_skills",
+        async ({ request }) => {
+          applied.push(await request.json());
+          return HttpResponse.json([]);
+        },
+      ),
+      http.post("http://tauri.local/apply_profile", () => {
+        fullApplyCalls += 1;
+        return HttpResponse.json([]);
+      }),
+    );
     localStorage.setItem("cc-switch-last-view", "skills");
+    // pi 不属于任何 Profile 分组，技能组合退回 Claude
     localStorage.setItem("cc-switch-last-app", "pi");
     const { default: App } = await import("@/App");
     renderApp(App);
 
-    expect(
-      await screen.findByTestId("unified-skills-panel"),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByRole("combobox", {
-        name: "profiles.switcherAriaLabel",
-      }),
-    ).toHaveAttribute("title", "profiles.switcherTooltip.claude");
+    const trigger = await screen.findByRole("combobox", {
+      name: "skills.combo.ariaLabel",
+    });
+    expect(trigger).toHaveAttribute("title", "skills.combo.tooltip");
+    // 当前启用的 Skill 集合与「Frontend」一致
+    await waitFor(() => expect(trigger).toHaveTextContent("Frontend"));
+
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByText("Docs"));
+
+    await waitFor(() =>
+      expect(applied).toEqual([{ id: "docs", scope: "claude" }]),
+    );
+    expect(fullApplyCalls).toBe(0);
   });
 
   it("badges the Skills button when the startup check finds updates", async () => {

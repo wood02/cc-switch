@@ -411,26 +411,9 @@ impl ProfileService {
                 }
             }
 
-            // 4. Skills diff（SkillService 返回 anyhow::Result，收进 warning）
+            // 4. Skills diff
             if let Some(Some(target_ids)) = payload.skills.get(app) {
-                let skills = state.db.get_all_installed_skills()?;
-                let current: Vec<(String, bool)> = skills
-                    .values()
-                    .map(|s| (s.id.clone(), s.apps.is_enabled_for(app)))
-                    .collect();
-                let (toggles, dangling) = plan_toggles(&current, target_ids);
-                for id in dangling {
-                    warnings.push(format!(
-                        "[{app_str}] skill '{id}' no longer exists, skipped"
-                    ));
-                }
-                for (id, enabled) in toggles {
-                    if let Err(e) = SkillService::toggle_app(&state.db, &id, app, enabled) {
-                        warnings.push(format!(
-                            "[{app_str}] toggle skill '{id}' -> {enabled} failed: {e}"
-                        ));
-                    }
-                }
+                Self::apply_skill_slot(state, app, target_ids, &mut warnings)?;
             }
 
             // 5. Prompt（None = 不动；已激活则幂等跳过，避免无谓的文件写与备份）
@@ -462,6 +445,68 @@ impl ProfileService {
         let should_stop_proxy = !state.db.is_live_takeover_active_sync();
 
         Ok((warnings, should_stop_proxy))
+    }
+
+    /// 只把项目里记录的 Skill 启用状态应用到分组内的应用（Skills 页「技能组合」）。
+    ///
+    /// 不动供应商 / MCP / Prompt / 代理接管，也不改当前项目标记、不自动保存旧项目：
+    /// 否则切换技能组合后再切项目，会把别的项目的供应商快照覆盖掉。
+    pub fn apply_skills(
+        state: &AppState,
+        profile_id: &str,
+        scope: ProfileScope,
+    ) -> Result<Vec<String>, AppError> {
+        let profile = state
+            .db
+            .get_profile(profile_id)?
+            .ok_or_else(|| AppError::InvalidInput(format!("Profile not found: {profile_id}")))?;
+        let payload: ProfilePayload = serde_json::from_str(&profile.payload)
+            .map_err(|e| AppError::Config(format!("解析 profile payload 失败: {e}")))?;
+
+        let mut warnings = Vec::new();
+        let mut captured = false;
+        for app in scope.apps().iter() {
+            if let Some(Some(target_ids)) = payload.skills.get(app) {
+                captured = true;
+                Self::apply_skill_slot(state, app, target_ids, &mut warnings)?;
+            }
+        }
+        if !captured {
+            warnings.push(format!(
+                "no {} skills captured in this project yet; nothing changed",
+                scope.as_str()
+            ));
+        }
+        Ok(warnings)
+    }
+
+    /// 最小 toggle：仅动目标态≠当前态的 Skill（SkillService 返回 anyhow::Result，收进 warning）
+    fn apply_skill_slot(
+        state: &AppState,
+        app: &AppType,
+        target_ids: &[String],
+        warnings: &mut Vec<String>,
+    ) -> Result<(), AppError> {
+        let app_str = app.as_str();
+        let skills = state.db.get_all_installed_skills()?;
+        let current: Vec<(String, bool)> = skills
+            .values()
+            .map(|s| (s.id.clone(), s.apps.is_enabled_for(app)))
+            .collect();
+        let (toggles, dangling) = plan_toggles(&current, target_ids);
+        for id in dangling {
+            warnings.push(format!(
+                "[{app_str}] skill '{id}' no longer exists, skipped"
+            ));
+        }
+        for (id, enabled) in toggles {
+            if let Err(e) = SkillService::toggle_app(&state.db, &id, app, enabled) {
+                warnings.push(format!(
+                    "[{app_str}] toggle skill '{id}' -> {enabled} failed: {e}"
+                ));
+            }
+        }
+        Ok(())
     }
 }
 

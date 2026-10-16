@@ -2746,6 +2746,18 @@
       "nameHint": "小文字・数字・ハイフンのみ、最大 64 文字。ディレクトリ名としても使われます。",
       "summary": "説明（任意）",
       "submit": "作成して編集"
+    },
+    "combo": {
+      "none": "スキルセット",
+      "ariaLabel": "スキルセット：{{name}}",
+      "tooltip": "スキルセットは有効な Skill だけを切り替えます。プロバイダー・MCP・メモリファイルは変わりません",
+      "search": "スキルセットを検索",
+      "empty": "スキルセットはまだありません",
+      "create": "有効な Skill から新しいセットを作成",
+      "createDescription": "現在有効な Skill をセットとして保存します。セットはプロジェクトとデータを共有し、プロジェクト一覧にも表示されます。",
+      "count": "{{count}} 個の Skill",
+      "notCaptured": "Skill 未記録",
+      "applySuccess": "スキルセット「{{name}}」に切り替えました"
     }
   },
   "deeplink": {

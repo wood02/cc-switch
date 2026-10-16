@@ -67,7 +67,6 @@ import {
 } from "@/lib/platform";
 import { AppSwitcher } from "@/components/AppSwitcher";
 import { ProfileSwitcher } from "@/components/profiles/ProfileSwitcher";
-import { APP_PROFILE_SCOPE } from "@/components/profiles/scope";
 import { ProviderList } from "@/components/providers/ProviderList";
 import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
@@ -1386,15 +1385,13 @@ function App() {
                     t("openclaw.agents.title")}
                   {currentView === "hermesMemory" && t("hermes.memory.title")}
                 </h1>
-                {/* Skills 页跨应用，当前应用不属于任何 Profile 分组时退回 Claude 组 */}
-                {currentView === "skills" &&
-                  (settingsData?.showProfileSwitcher ?? true) && (
-                    <ProfileSwitcher
-                      activeApp={
-                        APP_PROFILE_SCOPE[activeApp] ? activeApp : "claude"
-                      }
-                    />
-                  )}
+                {/* 技能组合：Profile 里只有 Claude Code / Codex 记录了 Skill，其余应用退回 Claude */}
+                {currentView === "skills" && (
+                  <ProfileSwitcher
+                    skillsOnly
+                    activeApp={activeApp === "codex" ? "codex" : "claude"}
+                  />
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2">

@@ -5,6 +5,7 @@ import {
   ChevronsUpDown,
   FolderCog,
   FolderOpen,
+  Layers,
   Plus,
   X,
 } from "lucide-react";
@@ -33,15 +34,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AppId } from "@/lib/api/types";
+import { useInstalledSkills } from "@/hooks/useSkills";
 import {
   useApplyProfileMutation,
+  useApplyProfileSkillsMutation,
   useClearProfileMutation,
   useCreateProfileMutation,
   useProfilesQuery,
 } from "@/lib/query/profiles";
 import { ProfileManageDialog } from "./ProfileManageDialog";
 import { APP_PROFILE_SCOPE, hasScopeSnapshot } from "./scope";
-import type { CurrentProfileIds, ProfileScope } from "@/lib/api/profiles";
+import type {
+  CurrentProfileIds,
+  Profile,
+  ProfileScope,
+} from "@/lib/api/profiles";
 
 const CURRENT_ID_KEY: Record<ProfileScope, keyof CurrentProfileIds> = {
   claude: "claude",
@@ -51,6 +58,8 @@ const CURRENT_ID_KEY: Record<ProfileScope, keyof CurrentProfileIds> = {
 
 interface ProfileSwitcherProps {
   activeApp: AppId;
+  /** Skills 页「技能组合」：只应用项目里的 Skill 启用状态，当前项按启用集合匹配 */
+  skillsOnly?: boolean;
 }
 
 /**
@@ -61,7 +70,10 @@ interface ProfileSwitcherProps {
  * 的供应商）与 Codex 组各自指向自己的当前项目、只应用组内快照。
  * 与右侧 AppSwitcher（仅切换查看的应用）语义不同。
  */
-export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
+export function ProfileSwitcher({
+  activeApp,
+  skillsOnly = false,
+}: ProfileSwitcherProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -70,6 +82,8 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
 
   const { data } = useProfilesQuery();
   const applyMutation = useApplyProfileMutation();
+  const applySkillsMutation = useApplyProfileSkillsMutation();
+  const { data: installedSkills } = useInstalledSkills();
   const clearMutation = useClearProfileMutation();
   const createMutation = useCreateProfileMutation();
 
@@ -81,13 +95,41 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
   }
 
   const profiles = data?.profiles ?? [];
-  const currentId = data?.currentIds?.[CURRENT_ID_KEY[scope]] ?? null;
-  const currentProfile = profiles.find((p) => p.id === currentId);
+  // 技能组合不改当前项目标记，当前项 = 记录的 Skill 集合与现在启用的一致的那个
+  const installedIds = new Set((installedSkills ?? []).map((s) => s.id));
+  const enabledIds = new Set(
+    (installedSkills ?? []).filter((s) => s.apps[scope]).map((s) => s.id),
+  );
+  const comboSkillIds = (profile: Profile) =>
+    profile.payload.skills[scope]?.filter((id) => installedIds.has(id));
+  const matchesEnabledSkills = (profile: Profile) => {
+    const ids = comboSkillIds(profile);
+    return (
+      !!ids &&
+      ids.length === enabledIds.size &&
+      ids.every((id) => enabledIds.has(id))
+    );
+  };
 
-  const handleApply = (id: string) => {
+  const currentId = skillsOnly
+    ? (profiles.find(matchesEnabledSkills)?.id ?? null)
+    : (data?.currentIds?.[CURRENT_ID_KEY[scope]] ?? null);
+  const currentProfile = profiles.find((p) => p.id === currentId);
+  const createLabel = skillsOnly
+    ? t("skills.combo.create")
+    : t("profiles.createFromCurrent");
+  const noneLabel = skillsOnly ? t("skills.combo.none") : t("profiles.none");
+  const tooltip = skillsOnly
+    ? t("skills.combo.tooltip")
+    : t(`profiles.switcherTooltip.${scope}`);
+
+  const handleApply = (profile: Profile) => {
     setOpen(false);
-    if (id !== currentId) {
-      applyMutation.mutate({ id, scope });
+    if (profile.id === currentId) return;
+    if (skillsOnly) {
+      applySkillsMutation.mutate({ id: profile.id, scope, name: profile.name });
+    } else {
+      applyMutation.mutate({ id: profile.id, scope });
     }
   };
 
@@ -110,19 +152,26 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
             type="button"
             role="combobox"
             aria-expanded={open}
-            aria-label={t("profiles.switcherAriaLabel", {
-              name: currentProfile?.name ?? t("profiles.none"),
-            })}
-            title={t(`profiles.switcherTooltip.${scope}`)}
+            aria-label={t(
+              skillsOnly
+                ? "skills.combo.ariaLabel"
+                : "profiles.switcherAriaLabel",
+              { name: currentProfile?.name ?? noneLabel },
+            )}
+            title={tooltip}
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition-colors",
               "hover:bg-black/5 dark:hover:bg-white/5",
               currentProfile ? "text-foreground" : "text-muted-foreground",
             )}
           >
-            <FolderOpen className="h-4 w-4 shrink-0 opacity-70" />
+            {skillsOnly ? (
+              <Layers className="h-4 w-4 shrink-0 opacity-70" />
+            ) : (
+              <FolderOpen className="h-4 w-4 shrink-0 opacity-70" />
+            )}
             <span className="max-w-[9rem] truncate">
-              {currentProfile?.name ?? t("profiles.none")}
+              {currentProfile?.name ?? noneLabel}
             </span>
             <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
           </button>
@@ -131,13 +180,25 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
           side="bottom"
           align="start"
           sideOffset={6}
-          aria-label={t(`profiles.switcherTooltip.${scope}`)}
+          aria-label={tooltip}
           className="z-[100] w-64 p-0"
         >
-          <Command label={t("profiles.searchPlaceholder")}>
-            <CommandInput placeholder={t("profiles.searchPlaceholder")} />
+          <Command
+            label={t(
+              skillsOnly ? "skills.combo.search" : "profiles.searchPlaceholder",
+            )}
+          >
+            <CommandInput
+              placeholder={t(
+                skillsOnly
+                  ? "skills.combo.search"
+                  : "profiles.searchPlaceholder",
+              )}
+            />
             <CommandList>
-              <CommandEmpty>{t("profiles.empty")}</CommandEmpty>
+              <CommandEmpty>
+                {t(skillsOnly ? "skills.combo.empty" : "profiles.empty")}
+              </CommandEmpty>
               {profiles.length > 0 && (
                 <CommandGroup>
                   {profiles.map((profile) => (
@@ -145,7 +206,7 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
                       key={profile.id}
                       value={profile.id}
                       keywords={[profile.name]}
-                      onSelect={() => handleApply(profile.id)}
+                      onSelect={() => handleApply(profile)}
                     >
                       <Check
                         className={cn(
@@ -156,10 +217,20 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
                         )}
                       />
                       <span className="truncate">{profile.name}</span>
-                      {!hasScopeSnapshot(profile, scope) && (
+                      {skillsOnly ? (
                         <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">
-                          {t("profiles.noSnapshotForScope")}
+                          {comboSkillIds(profile)
+                            ? t("skills.combo.count", {
+                                count: comboSkillIds(profile)!.length,
+                              })
+                            : t("skills.combo.notCaptured")}
                         </span>
+                      ) : (
+                        !hasScopeSnapshot(profile, scope) && (
+                          <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">
+                            {t("profiles.noSnapshotForScope")}
+                          </span>
+                        )
                       )}
                     </CommandItem>
                   ))}
@@ -169,16 +240,16 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
               <CommandGroup>
                 <CommandItem
                   value="__create__"
-                  keywords={[t("profiles.createFromCurrent")]}
+                  keywords={[createLabel]}
                   onSelect={() => {
                     setOpen(false);
                     setIsCreateOpen(true);
                   }}
                 >
                   <Plus className="mr-2 h-4 w-4 shrink-0" />
-                  {t("profiles.createFromCurrent")}
+                  {createLabel}
                 </CommandItem>
-                {currentId && (
+                {currentId && !skillsOnly && (
                   <CommandItem
                     value="__clear__"
                     keywords={[t("profiles.none")]}
@@ -218,9 +289,11 @@ export function ProfileSwitcher({ activeApp }: ProfileSwitcherProps) {
       >
         <DialogContent className="max-w-sm" zIndex="alert">
           <DialogHeader className="space-y-3 border-b-0 bg-transparent pb-0">
-            <DialogTitle>{t("profiles.createFromCurrent")}</DialogTitle>
+            <DialogTitle>{createLabel}</DialogTitle>
             <DialogDescription>
-              {t(`profiles.createDescription.${scope}`)}
+              {skillsOnly
+                ? t("skills.combo.createDescription")
+                : t(`profiles.createDescription.${scope}`)}
             </DialogDescription>
           </DialogHeader>
           <div className="px-6 pt-3">

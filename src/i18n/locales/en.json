@@ -2746,6 +2746,18 @@
       "nameHint": "Lowercase letters, digits and hyphens only, up to 64 characters. Also used as the directory name.",
       "summary": "Description (optional)",
       "submit": "Create and edit"
+    },
+    "combo": {
+      "none": "Skill set",
+      "ariaLabel": "Skill set: {{name}}",
+      "tooltip": "Skill sets switch only the enabled Skills; providers, MCP and memory files stay as they are",
+      "search": "Search skill sets",
+      "empty": "No skill sets yet",
+      "create": "New set from enabled Skills",
+      "createDescription": "Save the currently enabled Skills as a set. Sets share data with Projects and also appear in the project list.",
+      "count": "Skills: {{count}}",
+      "notCaptured": "No Skills recorded",
+      "applySuccess": "Switched to skill set \"{{name}}\""
     }
   },
   "deeplink": {

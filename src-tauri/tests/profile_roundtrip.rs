@@ -812,3 +812,74 @@ fn claude_desktop_profile_scope_is_independent() {
         "desktop scope marker set"
     );
 }
+
+#[test]
+fn apply_skills_only_restores_skills_and_leaves_the_rest_alone() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let home = ensure_test_home();
+    let state = create_test_state().expect("create test state");
+
+    for (id, key) in [("p1", "key-1"), ("p2", "key-2")] {
+        state
+            .db
+            .save_provider(AppType::Claude.as_str(), &claude_provider(id, key))
+            .expect("save provider");
+    }
+    state
+        .db
+        .set_current_provider(AppType::Claude.as_str(), "p1")
+        .expect("set current provider p1");
+    let claude_dir = home.join(".claude");
+    fs::create_dir_all(&claude_dir).expect("create .claude dir");
+    fs::write(
+        claude_dir.join("settings.json"),
+        serde_json::to_string_pretty(&claude_provider("p1", "key-1").settings_config)
+            .expect("serialize p1 settings"),
+    )
+    .expect("seed live settings.json");
+
+    write_ssot_skill("frontend");
+    write_ssot_skill("docs");
+    state
+        .db
+        .save_skill(&installed_skill("local:frontend", "frontend", true))
+        .expect("save frontend skill");
+    state
+        .db
+        .save_skill(&installed_skill("local:docs", "docs", false))
+        .expect("save docs skill");
+
+    let combo =
+        ProfileService::create(&state, "Frontend", ProfileScope::Claude).expect("create combo");
+
+    ProviderService::switch(&state, AppType::Claude, "p2").expect("switch to p2");
+    SkillService::toggle_app(&state.db, "local:frontend", &AppType::Claude, false)
+        .expect("disable frontend");
+    SkillService::toggle_app(&state.db, "local:docs", &AppType::Claude, true).expect("enable docs");
+
+    let warnings = ProfileService::apply_skills(&state, &combo.id, ProfileScope::Claude)
+        .expect("apply skills");
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+
+    let skills = state.db.get_all_installed_skills().expect("get skills");
+    assert!(skills["local:frontend"].apps.claude, "frontend re-enabled");
+    assert!(!skills["local:docs"].apps.claude, "docs disabled");
+    assert_eq!(
+        state
+            .db
+            .get_current_provider(AppType::Claude.as_str())
+            .expect("get current provider")
+            .as_deref(),
+        Some("p2"),
+        "provider untouched"
+    );
+    assert_eq!(
+        state
+            .db
+            .get_current_profile_id("claude")
+            .expect("get current profile id"),
+        None,
+        "current project marker untouched"
+    );
+}

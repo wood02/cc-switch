@@ -2747,6 +2747,18 @@
       "nameHint": "僅限小寫字母、數字和連字號，最多 64 個字元，同時作為目錄名稱。",
       "summary": "簡介（選填）",
       "submit": "建立並編輯"
+    },
+    "combo": {
+      "none": "技能組合",
+      "ariaLabel": "技能組合：{{name}}",
+      "tooltip": "技能組合：只切換目前啟用的 Skill，不動供應商、MCP 和記憶檔案",
+      "search": "搜尋技能組合",
+      "empty": "尚無技能組合",
+      "create": "以目前啟用的 Skill 新建組合",
+      "createDescription": "把目前啟用的 Skill 儲存為一個組合。組合與「專案」共用資料，也會出現在專案列表中。",
+      "count": "{{count}} 個 Skill",
+      "notCaptured": "未記錄 Skill",
+      "applySuccess": "已切換到技能組合「{{name}}」"
     }
   },
   "deeplink": {

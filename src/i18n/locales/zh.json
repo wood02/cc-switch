@@ -2746,6 +2746,18 @@
       "nameHint": "仅限小写字母、数字和连字符，最多 64 个字符，同时作为目录名。",
       "summary": "简介（可选）",
       "submit": "创建并编辑"
+    },
+    "combo": {
+      "none": "技能组合",
+      "ariaLabel": "技能组合：{{name}}",
+      "tooltip": "技能组合：只切换当前启用的 Skill，不动供应商、MCP 和记忆文件",
+      "search": "搜索技能组合",
+      "empty": "暂无技能组合",
+      "create": "用当前启用的 Skill 新建组合",
+      "createDescription": "把当前启用的 Skill 保存为一个组合。组合与「项目」共用数据，也会出现在项目列表里。",
+      "count": "{{count}} 个 Skill",
+      "notCaptured": "未记录 Skill",
+      "applySuccess": "已切换到技能组合「{{name}}」"
     }
   },
   "deeplink": {
