@@ -2542,7 +2542,7 @@
     "updateAvailable": "更新あり",
     "updateSuccess": "スキル {{name}} を最新バージョンに更新しました",
     "updateFailed": "更新に失敗しました",
-    "checkUpdates": "更新を確認",
+    "checkUpdates": "スキルを更新",
     "checkingUpdates": "確認中...",
     "noUpdates": "すべてのスキルは最新です",
     "updatesFound": "{{count}} 個のスキルに更新があります",

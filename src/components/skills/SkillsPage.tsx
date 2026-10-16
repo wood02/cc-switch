@@ -722,7 +722,6 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                     className="flex h-48 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
                   >
                     <p>{t("skills.custom.loadFailed", "榜单读取失败")}</p>
-                    <p>{String(customRanking.error)}</p>
                     <Button variant="outline" size="sm" onClick={reloadCustom}>
                       {t("skills.skillssh.retry")}
                     </Button>

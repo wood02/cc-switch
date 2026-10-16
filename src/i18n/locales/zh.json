@@ -2542,7 +2542,7 @@
     "updateAvailable": "可更新",
     "updateSuccess": "技能 {{name}} 已更新到最新版本",
     "updateFailed": "更新失败",
-    "checkUpdates": "检查更新",
+    "checkUpdates": "更新技能",
     "checkingUpdates": "检查中...",
     "noUpdates": "所有技能已是最新版本",
     "updatesFound": "发现 {{count}} 个技能有可用更新",
