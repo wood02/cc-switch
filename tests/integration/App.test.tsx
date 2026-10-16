@@ -673,6 +673,22 @@ describe("App integration with MSW", () => {
     expect(skillsPanelMocks.checkUpdates).toHaveBeenCalledTimes(1);
   });
 
+  it("offers the Profile switcher on the Skills page for apps outside a Profile group", async () => {
+    localStorage.setItem("cc-switch-last-view", "skills");
+    localStorage.setItem("cc-switch-last-app", "pi");
+    const { default: App } = await import("@/App");
+    renderApp(App);
+
+    expect(
+      await screen.findByTestId("unified-skills-panel"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("combobox", {
+        name: "profiles.switcherAriaLabel",
+      }),
+    ).toHaveAttribute("title", "profiles.switcherTooltip.claude");
+  });
+
   it("badges the Skills button when the startup check finds updates", async () => {
     server.use(
       http.post("http://tauri.local/check_skill_updates", () =>
