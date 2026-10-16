@@ -2688,6 +2688,56 @@
       "successSingle": "技能 {{name}} 已安裝",
       "successMultiple": "成功安裝 {{count}} 個技能",
       "noSkillsFound": "ZIP 檔案中未找到技能（需包含 SKILL.md 檔案）"
+    },
+    "custom": {
+      "source": "來源",
+      "ranking": "排行榜",
+      "date": "資料日期",
+      "latest": "最新",
+      "refresh": "重新整理排行榜",
+      "loadFailed": "排行榜讀取失敗",
+      "missing": "該日期沒有此排行榜",
+      "backToLatest": "切回最新",
+      "empty": "此排行榜暫無資料",
+      "historyFailed": "歷史日期讀取失敗，仍可查看最新排行榜",
+      "view": "查看",
+      "viewAria": "查看 {{name}}",
+      "unavailable": "暫無連結",
+      "rankings": {
+        "best-100": "綜合推薦",
+        "top-installs": "安裝總榜",
+        "trending-7d": "近七天趨勢",
+        "social-buzz": "社群熱議",
+        "most-active": "活躍更新",
+        "official-100": "官方技能",
+        "official-vendors": "官方廠商",
+        "top-repos": "熱門倉庫",
+        "rising-stars": "新秀榜"
+      },
+      "metric": {
+        "score": "綜合分",
+        "weeklyGrowth": "週成長",
+        "xMentions7d": "X 提及 · 7 天",
+        "lastUpdate": "最近更新",
+        "versions": "{{value}} 個版本",
+        "installsOrDownloads": "安裝/下載",
+        "skillsCount": "{{value}} 個技能",
+        "firstSeen": "收錄",
+        "days": "{{value}} 天",
+        "installs": "安裝量",
+        "downloads": "下載量"
+      },
+      "platform": {
+        "tencent": "騰訊",
+        "skillhubCn": "騰訊 SkillHub"
+      },
+      "errors": {
+        "csvFormat": "排行榜 CSV 格式錯誤",
+        "csvQuote": "排行榜 CSV 引號未閉合",
+        "csvFields": "排行榜 CSV 缺少必要欄位",
+        "csvColumns": "排行榜 CSV 欄數不一致",
+        "rowInvalid": "排行榜項目識別或排名無效"
+      }
     }
   },
   "deeplink": {

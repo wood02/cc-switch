@@ -27,7 +27,7 @@ import { settingsApi } from "@/lib/api";
 import type { DiscoverableSkill } from "@/lib/api/skills";
 import { cn } from "@/lib/utils";
 import {
-  BEST_SKILLS_PLATFORMS,
+  bestSkillsPlatformName,
   type BestSkillsMetric,
   type BestSkillsMetricIcon,
 } from "@/lib/bestSkills";
@@ -237,7 +237,7 @@ export function SkillCard({
                       ▲
                     </span>
                   )}
-                  {BEST_SKILLS_PLATFORMS[ranking.platform] ?? ranking.platform}
+                  {bestSkillsPlatformName(ranking.platform)}
                 </Badge>
               )}
               {skill.repoOwner && skill.repoName && (

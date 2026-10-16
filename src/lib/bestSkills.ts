@@ -1,4 +1,12 @@
+import i18n from "i18next";
 import type { DiscoverableSkill } from "@/lib/api/skills";
+
+// Parsed rows are cached per language (see useBestSkillsRanking), so labels are resolved here.
+const tr = (
+  key: string,
+  defaultValue: string,
+  options?: Record<string, unknown>,
+) => i18n.t(`skills.custom.${key}`, { defaultValue, ...options });
 
 export const BEST_SKILLS_RANKINGS = [
   ["best-100", "综合推荐"],
@@ -57,11 +65,12 @@ function parseCsv(text: string): string[][] {
       row = [];
       if (char === "\r" && text[i + 1] === "\n") i++;
     } else {
-      if (closed || char === '"') throw new Error("榜单 CSV 格式错误");
+      if (closed || char === '"')
+        throw new Error(tr("errors.csvFormat", "榜单 CSV 格式错误"));
       field += char;
     }
   }
-  if (quoted) throw new Error("榜单 CSV 引号未闭合");
+  if (quoted) throw new Error(tr("errors.csvQuote", "榜单 CSV 引号未闭合"));
   if (field || row.length || closed) {
     pushField();
     if (row.some(Boolean)) rows.push(row);
@@ -103,7 +112,7 @@ function githubRepo(value: string): [string, string] | undefined {
 
 function number(value: string | undefined): string {
   return value && Number.isFinite(Number(value))
-    ? new Intl.NumberFormat("zh-CN", {
+    ? new Intl.NumberFormat(i18n.language || "zh", {
         notation: "compact",
         maximumFractionDigits: 1,
       }).format(Number(value))
@@ -126,12 +135,14 @@ export interface BestSkillsMetric {
   detail?: string;
 }
 
-/** Display names for the upstream `platform` column. */
-export const BEST_SKILLS_PLATFORMS: Record<string, string> = {
-  "skills.sh": "skills.sh",
-  "skillhub-cn": "腾讯 SkillHub",
-  clawhub: "ClawHub",
-};
+/** Display name for the upstream `platform` column. */
+export function bestSkillsPlatformName(platform: string): string {
+  return platform === "skillhub-cn"
+    ? tr("platform.skillhubCn", "腾讯 SkillHub")
+    : platform === "clawhub"
+      ? "ClawHub"
+      : platform;
+}
 
 function metric(
   board: BestSkillsRanking,
@@ -139,56 +150,78 @@ function metric(
 ): BestSkillsMetric {
   switch (board) {
     case "best-100":
-      return { icon: "award", label: "综合分", value: row.wis || "—" };
+      return {
+        icon: "award",
+        label: tr("metric.score", "综合分"),
+        value: row.wis || "—",
+      };
     case "trending-7d":
       return {
         icon: "trending",
-        label: "周增长",
+        label: tr("metric.weeklyGrowth", "周增长"),
         value: row.growth_pct ? `${row.growth_pct}%` : "—",
       };
     case "social-buzz":
       return {
         icon: "message",
-        label: "X 提及 · 7 天",
+        label: tr("metric.xMentions7d", "X 提及 · 7 天"),
         value: `${number(row.x_mentions_7d)}${row.x_truncated === "true" ? "+" : ""}`,
         detail: `HN ${number(row.hn_hits_7d)} · Bluesky ${number(row.bsky_hits_7d)} · GitHub ${number(row.gh_mentions_7d)}`,
       };
     case "most-active":
       return {
         icon: "clock",
-        label: "最近更新",
+        label: tr("metric.lastUpdate", "最近更新"),
         value: row.last_update || "—",
-        detail: `${number(row.versions_clawhub)} 个版本`,
+        detail: tr("metric.versions", "{{value}} 个版本", {
+          value: number(row.versions_clawhub),
+        }),
       };
     case "official-vendors":
       return {
         icon: "download",
-        label: "安装/下载",
+        label: tr("metric.installsOrDownloads", "安装/下载"),
         value: number(row.total_installs_or_downloads),
-        detail: `${number(row.skills_count)} 个技能`,
+        detail: tr("metric.skillsCount", "{{value}} 个技能", {
+          value: number(row.skills_count),
+        }),
       };
     case "top-repos":
       return { icon: "star", label: "Stars", value: number(row.stars) };
     case "rising-stars":
       return {
         icon: "calendar",
-        label: "收录",
-        value: row.first_seen_days ? `${row.first_seen_days} 天` : "—",
+        label: tr("metric.firstSeen", "收录"),
+        value: row.first_seen_days
+          ? tr("metric.days", "{{value}} 天", { value: row.first_seen_days })
+          : "—",
       };
     default: {
       const counts = [
         ["skills.sh", "skills.sh", row.installs_skillssh],
         ["clawhub", "ClawHub", row.downloads_clawhub],
-        ["skillhub-cn", "腾讯", row.downloads_skillhub_cn],
+        [
+          "skillhub-cn",
+          tr("platform.tencent", "腾讯"),
+          row.downloads_skillhub_cn,
+        ],
       ].filter(([, , value]) => value !== undefined && value !== "");
       // The row's own platform leads; other registries become the detail line.
       const primary =
         counts.find(([platform]) => platform === row.platform) ?? counts[0];
-      if (!primary) return { icon: "download", label: "安装/下载", value: "—" };
+      if (!primary)
+        return {
+          icon: "download",
+          label: tr("metric.installsOrDownloads", "安装/下载"),
+          value: "—",
+        };
       const others = counts.filter((entry) => entry !== primary);
       return {
         icon: "download",
-        label: primary[0] === "skills.sh" ? "安装量" : "下载量",
+        label:
+          primary[0] === "skills.sh"
+            ? tr("metric.installs", "安装量")
+            : tr("metric.downloads", "下载量"),
         value: number(primary[2]),
         detail: others.length
           ? others
@@ -216,11 +249,12 @@ export function parseBestSkills(
     !headers.includes(identity) ||
     new Set(headers).size !== headers.length
   ) {
-    throw new Error("榜单 CSV 缺少必要字段");
+    throw new Error(tr("errors.csvFields", "榜单 CSV 缺少必要字段"));
   }
   const keys = new Set<string>();
   return data.map((cells) => {
-    if (cells.length !== headers.length) throw new Error("榜单 CSV 列数不一致");
+    if (cells.length !== headers.length)
+      throw new Error(tr("errors.csvColumns", "榜单 CSV 列数不一致"));
     const row = Object.fromEntries(
       headers.map((header, i) => [header, cells[i]]),
     );
@@ -235,7 +269,7 @@ export function parseBestSkills(
           ? `ch:${row.slug_clawhub}`
           : `${row.platform || board}:${name}`);
     if (!name || !Number.isSafeInteger(rank) || rank < 1 || keys.has(key))
-      throw new Error("榜单条目标识或排名无效");
+      throw new Error(tr("errors.rowInvalid", "榜单条目标识或排名无效"));
     keys.add(key);
     const repo = githubRepo(row.source_skillssh || "");
     const url =

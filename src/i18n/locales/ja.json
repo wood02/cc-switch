@@ -2687,6 +2687,56 @@
       "successSingle": "スキル {{name}} をインストールしました",
       "successMultiple": "{{count}} 件のスキルをインストールしました",
       "noSkillsFound": "ZIP ファイルにスキルが見つかりません（SKILL.md が必要です）"
+    },
+    "custom": {
+      "source": "ソース",
+      "ranking": "ランキング",
+      "date": "データ日付",
+      "latest": "最新",
+      "refresh": "ランキングを更新",
+      "loadFailed": "ランキングの読み込みに失敗しました",
+      "missing": "この日付のランキングはありません",
+      "backToLatest": "最新に戻る",
+      "empty": "このランキングにはデータがありません",
+      "historyFailed": "過去の日付を読み込めませんでした。最新ランキングは引き続き表示できます",
+      "view": "表示",
+      "viewAria": "{{name}} を表示",
+      "unavailable": "リンクなし",
+      "rankings": {
+        "best-100": "総合おすすめ",
+        "top-installs": "インストール数",
+        "trending-7d": "7日間トレンド",
+        "social-buzz": "話題",
+        "most-active": "アクティブ",
+        "official-100": "公式スキル",
+        "official-vendors": "公式ベンダー",
+        "top-repos": "人気リポジトリ",
+        "rising-stars": "新着注目"
+      },
+      "metric": {
+        "score": "総合スコア",
+        "weeklyGrowth": "週間成長",
+        "xMentions7d": "X 言及 · 7日",
+        "lastUpdate": "最終更新",
+        "versions": "{{value}} バージョン",
+        "installsOrDownloads": "インストール/ダウンロード",
+        "skillsCount": "{{value}} スキル",
+        "firstSeen": "掲載",
+        "days": "{{value}} 日",
+        "installs": "インストール数",
+        "downloads": "ダウンロード数"
+      },
+      "platform": {
+        "tencent": "Tencent",
+        "skillhubCn": "Tencent SkillHub"
+      },
+      "errors": {
+        "csvFormat": "ランキング CSV の形式が正しくありません",
+        "csvQuote": "ランキング CSV の引用符が閉じていません",
+        "csvFields": "ランキング CSV に必須列がありません",
+        "csvColumns": "ランキング CSV の列数が一致しません",
+        "rowInvalid": "ランキング項目の識別子または順位が無効です"
+      }
     }
   },
   "deeplink": {

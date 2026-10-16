@@ -2625,7 +2625,42 @@
       "historyFailed": "历史日期读取失败，仍可查看最新榜单",
       "view": "查看",
       "viewAria": "查看 {{name}}",
-      "unavailable": "暂无链接"
+      "unavailable": "暂无链接",
+      "rankings": {
+        "best-100": "综合推荐",
+        "top-installs": "安装总榜",
+        "trending-7d": "近七天趋势",
+        "social-buzz": "社区热议",
+        "most-active": "活跃更新",
+        "official-100": "官方技能",
+        "official-vendors": "官方厂商",
+        "top-repos": "热门仓库",
+        "rising-stars": "新秀榜"
+      },
+      "metric": {
+        "score": "综合分",
+        "weeklyGrowth": "周增长",
+        "xMentions7d": "X 提及 · 7 天",
+        "lastUpdate": "最近更新",
+        "versions": "{{value}} 个版本",
+        "installsOrDownloads": "安装/下载",
+        "skillsCount": "{{value}} 个技能",
+        "firstSeen": "收录",
+        "days": "{{value}} 天",
+        "installs": "安装量",
+        "downloads": "下载量"
+      },
+      "platform": {
+        "tencent": "腾讯",
+        "skillhubCn": "腾讯 SkillHub"
+      },
+      "errors": {
+        "csvFormat": "榜单 CSV 格式错误",
+        "csvQuote": "榜单 CSV 引号未闭合",
+        "csvFields": "榜单 CSV 缺少必要字段",
+        "csvColumns": "榜单 CSV 列数不一致",
+        "rowInvalid": "榜单条目标识或排名无效"
+      }
     },
     "skillssh": {
       "searchPlaceholder": "搜索 skills.sh（可选，至少 2 个字符）...",

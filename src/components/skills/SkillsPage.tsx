@@ -577,7 +577,7 @@ export const SkillsPage = forwardRef<SkillsPageHandle, SkillsPageProps>(
                     <SelectContent>
                       {BEST_SKILLS_RANKINGS.map(([value, label]) => (
                         <SelectItem key={value} value={value}>
-                          {label}
+                          {t(`skills.custom.rankings.${value}`, label)}
                         </SelectItem>
                       ))}
                     </SelectContent>
