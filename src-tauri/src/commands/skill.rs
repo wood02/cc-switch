@@ -215,9 +215,9 @@ pub async fn get_skills_sh_leaderboard(
 
 #[tauri::command]
 pub async fn get_best_skills_dates() -> Result<Vec<String>, String> {
-    crate::services::best_skills::dates()
-        .await
-        .map_err(|e| e.to_string())
+    Ok(crate::services::best_skills::dates(
+        chrono::Utc::now().date_naive(),
+    ))
 }
 
 #[tauri::command]

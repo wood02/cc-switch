@@ -1,6 +1,5 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use chrono::NaiveDate;
-use serde::Deserialize;
 use std::time::Duration;
 
 const RANKINGS: &[&str] = &[
@@ -56,24 +55,19 @@ pub async fn ranking(ranking: &str, date: &str) -> Result<Option<String>> {
     fetch(&ranking_url(ranking, date)?).await
 }
 
-pub async fn dates() -> Result<Vec<String>> {
-    #[derive(Deserialize)]
-    struct Entry {
-        name: String,
-        #[serde(rename = "type")]
-        kind: String,
-    }
-    let text = fetch("https://api.github.com/repos/LinklyAI/best-skills/contents/data?ref=main")
-        .await?
-        .context("Ranking history directory was not found")?;
-    let entries: Vec<Entry> = serde_json::from_str(&text)?;
-    let mut dates: Vec<_> = entries
-        .into_iter()
-        .filter(|entry| entry.kind == "dir" && is_date(&entry.name))
-        .map(|entry| entry.name)
+/// 历史快照是从首日起每天一个目录、没有缺口（2026-10-16 核对 61 天），所以本地推算日期，
+/// 不再请求 GitHub contents API——匿名 60 次/小时的限额经常被同出口 IP 用完。
+/// 今天的快照可能还没生成，只列到昨天（UTC）；「最新」已覆盖今天。
+/// shortcut: 上游哪天漏跑会多出一个空日期（前端显示「该日期暂无此榜单」），真出现缺口再换成读目录。
+pub fn dates(today: NaiveDate) -> Vec<String> {
+    let first = NaiveDate::from_ymd_opt(2026, 8, 16).expect("valid first snapshot date");
+    let mut dates: Vec<_> = first
+        .iter_days()
+        .take_while(|day| *day < today)
+        .map(|day| day.format("%Y-%m-%d").to_string())
         .collect();
-    dates.sort_unstable_by(|a, b| b.cmp(a));
-    Ok(dates)
+    dates.reverse();
+    dates
 }
 
 #[cfg(test)]
@@ -90,5 +84,15 @@ mod tests {
             assert!(ranking_url("best-100", date).is_err());
         }
         assert!(ranking_url("../raw/buzz", "latest").is_err());
+    }
+
+    #[test]
+    fn dates_run_newest_first_from_the_first_snapshot_to_yesterday() {
+        let day = |d| NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
+        assert_eq!(dates(day("2026-08-18")), ["2026-08-17", "2026-08-16"]);
+        assert!(dates(day("2026-08-16")).is_empty());
+        let all = dates(day("2026-10-16"));
+        assert_eq!((all.len(), all[0].as_str()), (61, "2026-10-15"));
+        assert!(all.iter().all(|d| ranking_url("best-100", d).is_ok()));
     }
 }
