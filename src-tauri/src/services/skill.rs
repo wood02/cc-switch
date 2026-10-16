@@ -2889,7 +2889,10 @@ impl SkillService {
     fn sync_to_app_unlocked(db: &Arc<Database>, app: &AppType) -> Result<()> {
         // OpenClaw 不支持 Skills，`~/.openclaw/skills` 归它自己：里面和受管 Skill 同名的
         // 真实目录不能被当成「已关掉的投影」删掉（移植自 v4 081fdd4d）。
-        if matches!(app, AppType::ClaudeDesktop | AppType::OpenClaw | AppType::Pi) {
+        if matches!(
+            app,
+            AppType::ClaudeDesktop | AppType::OpenClaw | AppType::Pi
+        ) {
             return Ok(());
         }
 

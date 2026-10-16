@@ -920,9 +920,8 @@ fn test_parse_mcp_deeplink() {
 fn test_parse_grokbuild_mcp_deeplink() {
     let config = r#"{"mcpServers":{"test":{"command":"echo"}}}"#;
     let config_b64 = BASE64_STANDARD.encode(config);
-    let url = format!(
-        "mskills://v1/import?resource=mcp&apps=grokbuild&config={config_b64}&enabled=true"
-    );
+    let url =
+        format!("mskills://v1/import?resource=mcp&apps=grokbuild&config={config_b64}&enabled=true");
 
     let request = parse_deeplink_url(&url).expect("parse Grok Build MCP deeplink");
 

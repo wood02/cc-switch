@@ -169,11 +169,7 @@ fn failed_backup_keeps_the_original_file() {
     let _guard = test_mutex().lock().unwrap();
     let (state, skill, path) = fixture();
     let document = SkillService::read_skill_document(&state.db, &skill.id).unwrap();
-    fs::write(
-        ensure_test_home().join(".mskills/skill-backups"),
-        "blocked",
-    )
-    .unwrap();
+    fs::write(ensure_test_home().join(".mskills/skill-backups"), "blocked").unwrap();
     assert!(SkillService::save_skill_document(
         &state.db,
         &skill.id,
