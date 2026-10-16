@@ -221,6 +221,25 @@ export function useScanUnmanagedSkills(options?: { enabled?: boolean }) {
  * 从应用目录导入 Skills
  * 成功后先合并缓存，并在结束后刷新所有可能受影响的列表
  */
+export function useCreateLocalSkill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      directory,
+      description,
+    }: {
+      directory: string;
+      description: string;
+    }) => skillsApi.createLocal(directory, description),
+    onSuccess: (skill) => {
+      queryClient.setQueryData<InstalledSkill[]>(
+        ["skills", "installed"],
+        (oldData) => oldData && [...oldData, skill],
+      );
+    },
+  });
+}
+
 export function useImportSkillsFromApps() {
   const queryClient = useQueryClient();
   return useMutation({

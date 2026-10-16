@@ -2738,6 +2738,15 @@
         "csvColumns": "排行榜 CSV 欄數不一致",
         "rowInvalid": "排行榜項目識別或排名無效"
       }
+    },
+    "create": {
+      "button": "新增",
+      "title": "新增 Skill",
+      "description": "在 Skills 目錄中依範本產生 SKILL.md，建立後可直接編輯；預設不啟用到任何應用。",
+      "name": "名稱",
+      "nameHint": "僅限小寫字母、數字和連字號，最多 64 個字元，同時作為目錄名稱。",
+      "summary": "簡介（選填）",
+      "submit": "建立並編輯"
     }
   },
   "deeplink": {

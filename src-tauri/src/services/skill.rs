@@ -2065,6 +2065,60 @@ impl SkillService {
         })
     }
 
+    /// 在 SSOT 中从模板新建一个本地 Skill，默认不启用到任何应用。
+    pub fn create_local_skill(
+        db: &Arc<Database>,
+        directory: &str,
+        description: &str,
+    ) -> Result<InstalledSkill> {
+        let _guard = skill_state_write_guard();
+        let dir_name = Self::require_valid_directory(directory)?;
+        // 按 Agent Skills 规范限定 name，模板里的 `name:` 因此无需 YAML 转义。
+        if dir_name.len() > 64
+            || !dir_name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
+            return Err(anyhow!(
+                "Skill name must use lowercase letters, digits and hyphens: {dir_name}"
+            ));
+        }
+        let dest = Self::get_ssot_dir()?.join(&dir_name);
+        if dest.exists()
+            || db
+                .get_all_installed_skills()?
+                .values()
+                .any(|s| s.directory.eq_ignore_ascii_case(&dir_name))
+            || AppType::all().any(|app| Self::skill_exists_in_app(&dir_name, &app))
+        {
+            return Err(anyhow!("Skill already exists: {dir_name}"));
+        }
+        let description = description.trim();
+        // JSON 字符串也是合法的 YAML 双引号标量，借它转义用户输入。
+        let content = format!(
+            "---\nname: {dir_name}\ndescription: {}\n---\n\n# {dir_name}\n",
+            serde_json::to_string(description)?
+        );
+        fs::create_dir_all(&dest)?;
+        fs::write(dest.join("SKILL.md"), content)?;
+        let skill = InstalledSkill {
+            id: format!("local:{dir_name}"),
+            name: dir_name.clone(),
+            description: (!description.is_empty()).then(|| description.to_string()),
+            directory: dir_name,
+            repo_owner: None,
+            repo_name: None,
+            repo_branch: None,
+            readme_url: None,
+            apps: SkillApps::default(),
+            installed_at: chrono::Utc::now().timestamp(),
+            content_hash: Self::compute_dir_hash(&dest).ok(),
+            updated_at: 0,
+        };
+        db.save_skill(&skill)?;
+        Ok(skill)
+    }
+
     pub fn read_skill_document(db: &Arc<Database>, id: &str) -> Result<SkillDocument> {
         let _guard = skill_state_read_guard();
         let skill = db

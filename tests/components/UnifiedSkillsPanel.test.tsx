@@ -31,11 +31,13 @@ vi.mock("@/components/skills/SkillDocumentPanel", () => ({
   SkillDocumentPanel: ({
     skill,
     onClose,
+    startEditing,
   }: {
     skill: InstalledSkill;
     onClose: () => void;
+    startEditing?: boolean;
   }) => (
-    <div data-testid="skill-document">
+    <div data-testid="skill-document" data-editing={String(!!startEditing)}>
       <span>{skill.directory}</span>
       <button onClick={onClose}>Close preview</button>
     </div>
@@ -44,6 +46,7 @@ vi.mock("@/components/skills/SkillDocumentPanel", () => ({
 const toggleSkillAppMock = vi.fn();
 const uninstallSkillMock = vi.fn();
 const importSkillsMock = vi.fn();
+const createSkillMock = vi.fn();
 const installFromZipMock = vi.fn();
 const deleteSkillBackupMock = vi.fn();
 const restoreSkillBackupMock = vi.fn();
@@ -125,6 +128,10 @@ vi.mock("@/hooks/useSkills", () => ({
   }),
   useImportSkillsFromApps: () => ({
     mutateAsync: importSkillsMock,
+  }),
+  useCreateLocalSkill: () => ({
+    mutateAsync: createSkillMock,
+    isPending: false,
   }),
   useInstallSkillsFromZip: () => ({
     mutateAsync: installFromZipMock,
@@ -350,6 +357,36 @@ describe("UnifiedSkillsPanel", () => {
         }),
       ]),
     );
+  });
+
+  it("creates a local Skill and opens its document in edit mode", async () => {
+    const ref = createRef<UnifiedSkillsPanelHandle>();
+    createSkillMock.mockResolvedValue(
+      makeInstalledSkill({ id: "local:my-skill", directory: "my-skill" }),
+    );
+    render(
+      <UnifiedSkillsPanel
+        ref={ref}
+        currentApp="claude"
+        onOpenDiscovery={vi.fn()}
+      />,
+    );
+    act(() => ref.current?.openCreate());
+    const user = userEvent.setup();
+    const submit = screen.getByRole("button", { name: "skills.create.submit" });
+    await user.type(screen.getByPlaceholderText("my-skill"), "My Skill");
+    expect(submit).toBeDisabled();
+    await user.clear(screen.getByPlaceholderText("my-skill"));
+    await user.type(screen.getByPlaceholderText("my-skill"), "my-skill");
+    await user.click(submit);
+
+    expect(createSkillMock).toHaveBeenCalledWith({
+      directory: "my-skill",
+      description: "",
+    });
+    const document = await screen.findByTestId("skill-document");
+    expect(document).toHaveAttribute("data-editing", "true");
+    expect(within(document).getByText("my-skill")).toBeInTheDocument();
   });
 
   it("opens the import dialog without crashing when app toggles render", async () => {

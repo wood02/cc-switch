@@ -2737,6 +2737,15 @@
         "csvColumns": "Ranking CSV has inconsistent column counts",
         "rowInvalid": "Invalid ranking entry identity or rank"
       }
+    },
+    "create": {
+      "button": "New",
+      "title": "New Skill",
+      "description": "Generates SKILL.md from a template in the Skills directory and opens it for editing. It is not enabled for any app by default.",
+      "name": "Name",
+      "nameHint": "Lowercase letters, digits and hyphens only, up to 64 characters. Also used as the directory name.",
+      "summary": "Description (optional)",
+      "submit": "Create and edit"
     }
   },
   "deeplink": {

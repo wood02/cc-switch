@@ -1544,6 +1544,7 @@ pub fn run() {
             commands::restore_env_backup,
             // Skill management (v3.10.0+ unified)
             commands::get_installed_skills,
+            commands::create_local_skill,
             commands::read_skill_document,
             commands::save_skill_document,
             commands::get_skill_backups,

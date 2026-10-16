@@ -24,6 +24,7 @@ import {
   useUninstallSkill,
   useScanUnmanagedSkills,
   useImportSkillsFromApps,
+  useCreateLocalSkill,
   useInstallSkillsFromZip,
   useCheckSkillUpdates,
   useUpdateSkill,
@@ -51,6 +52,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { ImeSafeInput } from "@/components/ui/ime-safe-input";
 
 const IMPORT_SKILLS_APP_IDS = SKILLS_APP_IDS.filter((app) => app !== "pi");
 
@@ -71,6 +74,7 @@ export interface SkillsCheckUpdatesState {
 export interface UnifiedSkillsPanelHandle {
   openDiscovery: () => void;
   openImport: () => void;
+  openCreate: () => void;
   openInstallFromZip: () => void;
   openRestoreFromBackup: () => void;
   checkUpdates: () => void;
@@ -107,6 +111,8 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [previewSkill, setPreviewSkill] = useState<InstalledSkill | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editPreview, setEditPreview] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [writePending, setWritePending] = useState(false);
   const writeLockRef = React.useRef(false);
@@ -127,6 +133,7 @@ const UnifiedSkillsPanel = React.forwardRef<
   const { data: unmanagedSkills, refetch: scanUnmanaged } =
     useScanUnmanagedSkills({ enabled: true });
   const importMutation = useImportSkillsFromApps();
+  const createMutation = useCreateLocalSkill();
   const installFromZipMutation = useInstallSkillsFromZip();
   const {
     data: skillUpdates,
@@ -152,11 +159,13 @@ const UnifiedSkillsPanel = React.forwardRef<
     uninstallMutation.isPending ||
     restoreBackupMutation.isPending ||
     importMutation.isPending ||
+    createMutation.isPending ||
     installFromZipMutation.isPending ||
     updateSkillMutation.isPending ||
     isUpdatingAll;
   const dialogOpen =
     importDialogOpen ||
+    createDialogOpen ||
     restoreDialogOpen ||
     confirmDialog !== null ||
     previewSkill !== null;
@@ -513,6 +522,23 @@ const UnifiedSkillsPanel = React.forwardRef<
     }
   };
 
+  const handleCreate = async (directory: string, description: string) => {
+    if (!beginWrite(true)) return;
+    try {
+      const skill = await createMutation.mutateAsync({
+        directory,
+        description,
+      });
+      setCreateDialogOpen(false);
+      setEditPreview(true);
+      setPreviewSkill(skill);
+    } catch (error) {
+      toast.error(t("common.error"), { description: String(error) });
+    } finally {
+      endWrite();
+    }
+  };
+
   const handleOpenRestoreFromBackup = async () => {
     if (!beginWrite()) return;
     setRestoreDialogOpen(true);
@@ -631,6 +657,12 @@ const UnifiedSkillsPanel = React.forwardRef<
       }
     },
     openImport: handleOpenImport,
+    openCreate: () => {
+      if (beginWrite()) {
+        setCreateDialogOpen(true);
+        endWrite();
+      }
+    },
     openInstallFromZip: handleInstallFromZip,
     openRestoreFromBackup: handleOpenRestoreFromBackup,
     checkUpdates: handleCheckUpdates,
@@ -765,7 +797,19 @@ const UnifiedSkillsPanel = React.forwardRef<
         <SkillDocumentPanel
           key={previewSkill.id}
           skill={previewSkill}
-          onClose={() => setPreviewSkill(null)}
+          startEditing={editPreview}
+          onClose={() => {
+            setPreviewSkill(null);
+            setEditPreview(false);
+          }}
+        />
+      )}
+
+      {createDialogOpen && (
+        <CreateSkillDialog
+          isCreating={createMutation.isPending}
+          onCreate={handleCreate}
+          onClose={() => setCreateDialogOpen(false)}
         />
       )}
 
@@ -938,6 +982,71 @@ interface ImportSkillsDialogProps {
   onImport: (imports: ImportSkillSelection[]) => void;
   onClose: () => void;
 }
+
+const CreateSkillDialog: React.FC<{
+  isCreating: boolean;
+  onCreate: (directory: string, description: string) => void;
+  onClose: () => void;
+}> = ({ isCreating, onCreate, onClose }) => {
+  const { t } = useTranslation();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const valid = /^[a-z0-9-]{1,64}$/.test(name);
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !isCreating && onClose()}>
+      <DialogContent className="max-w-md" zIndex="alert">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !isCreating) onCreate(name, description);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("skills.create.title")}</DialogTitle>
+            <DialogDescription>
+              {t("skills.create.description")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-6 py-4">
+            <label className="block space-y-1 text-sm">
+              <span>{t("skills.create.name")}</span>
+              <Input
+                autoFocus
+                value={name}
+                placeholder="my-skill"
+                onChange={(event) => setName(event.target.value)}
+              />
+              <span className="block text-xs text-muted-foreground">
+                {t("skills.create.nameHint")}
+              </span>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>{t("skills.create.summary")}</span>
+              <ImeSafeInput
+                value={description}
+                onValueChange={setDescription}
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isCreating}
+              onClick={onClose}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" disabled={!valid || isCreating}>
+              {t("skills.create.submit")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 interface RestoreSkillsDialogProps {
   backups: SkillBackupEntry[];

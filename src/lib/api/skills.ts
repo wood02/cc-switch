@@ -168,6 +168,13 @@ export const skillsApi = {
     return await invoke("read_skill_document", { id });
   },
 
+  async createLocal(
+    directory: string,
+    description: string,
+  ): Promise<InstalledSkill> {
+    return await invoke("create_local_skill", { directory, description });
+  },
+
   async saveDocument(
     id: string,
     content: string,

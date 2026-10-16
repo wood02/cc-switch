@@ -209,3 +209,34 @@ fn symlinked_manifest_cannot_read_or_edit_a_file_outside_the_skill() {
     );
     assert_eq!(fs::read_to_string(outside).unwrap(), "private content");
 }
+
+#[test]
+fn create_local_skill_writes_editable_template_and_rejects_duplicates() {
+    let _guard = test_mutex().lock().unwrap();
+    let (state, _, _) = fixture();
+    let skill =
+        SkillService::create_local_skill(&state.db, "fresh", "Does: \"things\"\nwell").unwrap();
+    assert_eq!(skill.id, "local:fresh");
+    assert!(!skill.apps.claude && !skill.apps.codex);
+    let document = SkillService::read_skill_document(&state.db, &skill.id).unwrap();
+    assert!(document.content.starts_with("---\nname: fresh\n"));
+    // 模板必须能原样通过保存时的 front matter 校验。
+    let saved = SkillService::save_skill_document(
+        &state.db,
+        &skill.id,
+        &document.content,
+        &document.revision,
+    )
+    .unwrap();
+    assert_eq!(
+        saved.skill.description.as_deref(),
+        Some("Does: \"things\"\nwell")
+    );
+
+    for bad in ["fresh", "example", "../escape", "", "Has Space", "a: b"] {
+        assert!(
+            SkillService::create_local_skill(&state.db, bad, "").is_err(),
+            "must reject: {bad:?}"
+        );
+    }
+}

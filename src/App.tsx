@@ -1571,6 +1571,18 @@ function App() {
                       size="sm"
                       disabled={skillsManagementBusy}
                       onClick={() =>
+                        unifiedSkillsPanelRef.current?.openCreate()
+                      }
+                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      {t("skills.create.button")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={skillsManagementBusy}
+                      onClick={() =>
                         unifiedSkillsPanelRef.current?.openImport()
                       }
                       className="relative hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"

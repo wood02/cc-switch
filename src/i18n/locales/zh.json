@@ -2737,6 +2737,15 @@
       "successSingle": "技能 {{name}} 已安装",
       "successMultiple": "成功安装 {{count}} 个技能",
       "noSkillsFound": "ZIP 文件中未找到技能（需包含 SKILL.md 文件）"
+    },
+    "create": {
+      "button": "新建",
+      "title": "新建 Skill",
+      "description": "在 Skills 目录中按模板生成 SKILL.md，创建后可直接编辑；默认不启用到任何应用。",
+      "name": "名称",
+      "nameHint": "仅限小写字母、数字和连字符，最多 64 个字符，同时作为目录名。",
+      "summary": "简介（可选）",
+      "submit": "创建并编辑"
     }
   },
   "deeplink": {

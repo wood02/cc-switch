@@ -34,6 +34,16 @@ pub fn get_installed_skills(app_state: State<'_, AppState>) -> Result<Vec<Instal
 }
 
 #[tauri::command]
+pub fn create_local_skill(
+    directory: String,
+    description: String,
+    app_state: State<'_, AppState>,
+) -> Result<InstalledSkill, String> {
+    SkillService::create_local_skill(&app_state.db, &directory, &description)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn read_skill_document(
     id: String,
     app_state: State<'_, AppState>,
