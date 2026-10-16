@@ -353,6 +353,21 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // 20. 技能组表（Skills 页「技能组」：只记一组 Skill id，不绑定应用，与项目 Profile 无关）
+        //     新增表随建表幂等创建，不单独 bump 版本，旧版本应用打开时直接忽略此表
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS skill_groups (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                skills TEXT NOT NULL,
+                sort_order INTEGER,
+                created_at INTEGER,
+                updated_at INTEGER
+            )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
         // 修复跑过未发布开发版的库：current 标记曾是全局 key，现按应用分组
         // （随 v12 定稿为 current_profile_id_<scope>，不单独 bump 版本）
         if conn

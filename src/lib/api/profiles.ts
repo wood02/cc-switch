@@ -101,13 +101,6 @@ export const profilesApi = {
   },
 
   /**
-   * 只应用项目里的 Skill 启用状态（Skills 页「技能组合」），返回 warnings
-   */
-  async applySkills(id: string, scope: ProfileScope): Promise<string[]> {
-    return await invoke("apply_profile_skills", { id, scope });
-  },
-
-  /**
    * 不使用项目：仅清除某分组的激活标记，不改动任何配置
    */
   async clearCurrent(scope: ProfileScope): Promise<void> {

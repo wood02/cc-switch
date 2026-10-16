@@ -193,14 +193,3 @@ pub fn apply_profile(
 
     Ok(warnings)
 }
-
-/// 只应用项目里的 Skill 启用状态（Skills 页「技能组合」），不切换供应商 / MCP / Prompt。
-#[tauri::command]
-pub fn apply_profile_skills(
-    state: State<'_, AppState>,
-    id: String,
-    scope: String,
-) -> Result<Vec<String>, String> {
-    let scope = ProfileScope::parse(&scope).map_err(|e| e.to_string())?;
-    ProfileService::apply_skills(&state, &id, scope).map_err(|e| e.to_string())
-}

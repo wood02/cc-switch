@@ -65,6 +65,7 @@ pub use services::{
     profile::{ProfilePayload, ProfileScope, ProfileService},
     provider::reapply_current_codex_official_live,
     skill::{migrate_skills_to_ssot, ImportSkillSelection},
+    skill_group::SkillGroupService,
     ConfigService, EndpointLatency, McpService, PromptService, ProviderService, ProxyService,
     SkillService, SpeedtestService,
 };
@@ -1495,7 +1496,11 @@ pub fn run() {
             commands::delete_profile,
             commands::clear_current_profile,
             commands::apply_profile,
-            commands::apply_profile_skills,
+            commands::list_skill_groups,
+            commands::create_skill_group,
+            commands::rename_skill_group,
+            commands::delete_skill_group,
+            commands::apply_skill_group,
             // Fetch OpenAI-compatible and Anthropic model lists. Response data structure:
             // data[].id, data[]?.owned_by. Special: supports Zhipu OpenAI Responses models[].slug.
             commands::fetch_models_for_config,

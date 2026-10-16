@@ -2607,6 +2607,7 @@
     "search": "搜尋技能",
     "searchPlaceholder": "搜尋技能名稱或儲存庫名稱...",
     "installedSearchPlaceholder": "搜尋已安裝技能的名稱、描述或儲存庫...",
+    "installedFiltered": "已篩選 {{shown}} / {{count}}",
     "installedSearchAriaLabel": "搜尋已安裝技能",
     "noInstalledSearchResults": "未找到相符的已安裝技能",
     "searchSource": {
@@ -2642,7 +2643,7 @@
     "noResults": "未找到相符的技能",
     "noInstalled": "暫無已安裝的技能",
     "noInstalledDescription": "從儲存庫發現並安裝技能，或匯入已有的技能",
-    "discover": "發現技能",
+    "discover": "探索發現",
     "add": "加入",
     "import": "匯入已有",
     "importDescription": "選擇要匯入至 MSkills 統一管理的技能",
@@ -2749,17 +2750,28 @@
       "summary": "簡介（選填）",
       "submit": "建立並編輯"
     },
-    "combo": {
-      "none": "技能組合",
-      "ariaLabel": "技能組合：{{name}}",
-      "tooltip": "技能組合：只切換目前啟用的 Skill，不動供應商、MCP 和記憶檔案",
-      "search": "搜尋技能組合",
-      "empty": "尚無技能組合",
-      "create": "以目前啟用的 Skill 新建組合",
-      "createDescription": "把目前啟用的 Skill 儲存為一個組合。組合與「專案」共用資料，也會出現在專案列表中。",
+    "group": {
+      "none": "技能組",
+      "ariaLabel": "技能組：{{name}}",
+      "tooltip": "技能組：一鍵切換目前應用啟用的 Skill，不動供應商、MCP 和記憶檔案",
+      "search": "搜尋技能組",
+      "empty": "尚無技能組",
+      "create": "以目前啟用的 Skill 新建技能組",
+      "createDescription": "把目前應用啟用的 Skill 儲存為一個技能組，之後可一鍵切換回來。",
+      "namePlaceholder": "例如：前端、寫作",
       "count": "{{count}} 個 Skill",
-      "notCaptured": "未記錄 Skill",
-      "applySuccess": "已切換到技能組合「{{name}}」"
+      "manage": "管理技能組…",
+      "manageTitle": "管理技能組",
+      "manageDescription": "重新命名或刪除技能組，不會改動 Skill 本身。",
+      "rename": "重新命名",
+      "delete": "刪除",
+      "deleteConfirmTitle": "確認刪除",
+      "deleteConfirmMessage": "確定要刪除技能組「{{name}}」嗎？不會解除安裝或停用其中的 Skill。",
+      "createSuccess": "技能組已建立",
+      "createFailed": "建立技能組失敗: {{detail}}",
+      "updateFailed": "更新技能組失敗: {{detail}}",
+      "applySuccess": "已切換到技能組「{{name}}」",
+      "applyFailed": "切換技能組失敗: {{detail}}"
     }
   },
   "deeplink": {

@@ -19,7 +19,8 @@ import {
   BarChart2,
   Download,
   FolderArchive,
-  Search,
+  Sparkles,
+  PackagePlus,
   FolderOpen,
   KeyRound,
   Shield,
@@ -68,6 +69,7 @@ import {
 } from "@/lib/platform";
 import { AppSwitcher } from "@/components/AppSwitcher";
 import { ProfileSwitcher } from "@/components/profiles/ProfileSwitcher";
+import { SkillGroupSwitcher } from "@/components/skills/SkillGroupSwitcher";
 import { ProviderList } from "@/components/providers/ProviderList";
 import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
@@ -121,6 +123,7 @@ import {
   APP_IDS,
   DEFAULT_VISIBLE_APPS,
   isProxyAppId,
+  SKILLS_APP_IDS,
 } from "@/config/appConfig";
 
 type View =
@@ -1393,11 +1396,12 @@ function App() {
                     t("openclaw.agents.title")}
                   {currentView === "hermesMemory" && t("hermes.memory.title")}
                 </h1>
-                {/* 技能组合：Profile 里只有 Claude Code / Codex 记录了 Skill，其余应用退回 Claude */}
+                {/* 技能组作用于当前查看的应用，不支持 Skill 的应用退回 Claude */}
                 {currentView === "skills" && (
-                  <ProfileSwitcher
-                    skillsOnly
-                    activeApp={activeApp === "codex" ? "codex" : "claude"}
+                  <SkillGroupSwitcher
+                    app={
+                      SKILLS_APP_IDS.includes(activeApp) ? activeApp : "claude"
+                    }
                   />
                 )}
               </div>
@@ -1546,9 +1550,9 @@ function App() {
                               : undefined
                           }
                         >
-                          <Plus className="w-4 h-4 mr-2" />
+                          <PackagePlus className="w-4 h-4" />
                           {t("skills.add")}
-                          <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-60" />
+                          <ChevronDown className="w-3.5 h-3.5 -ml-0.5 opacity-60" />
                           {hasUnmanagedSkills && (
                             <span
                               className="absolute top-1 right-1 h-2 w-2 rounded-full bg-green-500"
@@ -1608,7 +1612,7 @@ function App() {
                       }
                       className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
                     >
-                      <Search className="w-4 h-4 mr-2" />
+                      <Sparkles className="w-4 h-4" />
                       {t("skills.discover")}
                     </Button>
                     <Button
@@ -1628,9 +1632,9 @@ function App() {
                       )}
                     >
                       {skillsCheckUpdatesState.isChecking ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <RefreshCw className="w-4 h-4 mr-2" />
+                        <RefreshCw className="w-4 h-4" />
                       )}
                       {skillsCheckUpdatesState.isChecking
                         ? t("skills.checkingUpdates")

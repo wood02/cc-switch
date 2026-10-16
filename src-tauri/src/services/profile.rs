@@ -447,41 +447,9 @@ impl ProfileService {
         Ok((warnings, should_stop_proxy))
     }
 
-    /// 只把项目里记录的 Skill 启用状态应用到分组内的应用（Skills 页「技能组合」）。
-    ///
-    /// 不动供应商 / MCP / Prompt / 代理接管，也不改当前项目标记、不自动保存旧项目：
-    /// 否则切换技能组合后再切项目，会把别的项目的供应商快照覆盖掉。
-    pub fn apply_skills(
-        state: &AppState,
-        profile_id: &str,
-        scope: ProfileScope,
-    ) -> Result<Vec<String>, AppError> {
-        let profile = state
-            .db
-            .get_profile(profile_id)?
-            .ok_or_else(|| AppError::InvalidInput(format!("Profile not found: {profile_id}")))?;
-        let payload: ProfilePayload = serde_json::from_str(&profile.payload)
-            .map_err(|e| AppError::Config(format!("解析 profile payload 失败: {e}")))?;
-
-        let mut warnings = Vec::new();
-        let mut captured = false;
-        for app in scope.apps().iter() {
-            if let Some(Some(target_ids)) = payload.skills.get(app) {
-                captured = true;
-                Self::apply_skill_slot(state, app, target_ids, &mut warnings)?;
-            }
-        }
-        if !captured {
-            warnings.push(format!(
-                "no {} skills captured in this project yet; nothing changed",
-                scope.as_str()
-            ));
-        }
-        Ok(warnings)
-    }
-
     /// 最小 toggle：仅动目标态≠当前态的 Skill（SkillService 返回 anyhow::Result，收进 warning）
-    fn apply_skill_slot(
+    /// 技能组切换也复用这里
+    pub(crate) fn apply_skill_slot(
         state: &AppState,
         app: &AppType,
         target_ids: &[String],

@@ -678,76 +678,52 @@ describe("App integration with MSW", () => {
     expect(skillsPanelMocks.checkUpdates).toHaveBeenCalledTimes(1);
   });
 
-  it("switches only Skills from the skill-set switcher on the Skills page", async () => {
-    const slot = <T,>(claude: T) => ({
-      claude,
-      "claude-desktop": null,
-      codex: null,
-    });
-    const combo = (id: string, name: string, skills: string[]) => ({
-      id,
-      name,
-      payload: {
-        providers: slot("p1"),
-        mcp: slot([]),
-        skills: slot(skills),
-        prompts: slot(null),
-      },
-    });
-    const skill = (id: string, claude: boolean) => ({
+  it("applies a skill group to the viewed app from the Skills page", async () => {
+    const skill = (id: string, pi: boolean) => ({
       id,
       name: id,
       directory: id.replace("local:", ""),
-      apps: { claude, codex: false },
+      apps: { claude: false, codex: false, pi },
       installedAt: 1,
     });
     const applied: unknown[] = [];
-    let fullApplyCalls = 0;
+    let profileCalls = 0;
     server.use(
-      http.post("http://tauri.local/list_profiles", () =>
-        HttpResponse.json({
-          profiles: [
-            combo("fe", "Frontend", ["local:a"]),
-            combo("docs", "Docs", ["local:b"]),
-          ],
-          currentIds: { claude: null, claudeDesktop: null, codex: null },
-        }),
+      http.post("http://tauri.local/list_skill_groups", () =>
+        HttpResponse.json([
+          { id: "fe", name: "Frontend", skills: ["local:a"] },
+          { id: "docs", name: "Docs", skills: ["local:b", "local:gone"] },
+        ]),
       ),
       http.post("http://tauri.local/get_installed_skills", () =>
         HttpResponse.json([skill("local:a", true), skill("local:b", false)]),
       ),
-      http.post(
-        "http://tauri.local/apply_profile_skills",
-        async ({ request }) => {
-          applied.push(await request.json());
-          return HttpResponse.json([]);
-        },
-      ),
+      http.post("http://tauri.local/apply_skill_group", async ({ request }) => {
+        applied.push(await request.json());
+        return HttpResponse.json([]);
+      }),
       http.post("http://tauri.local/apply_profile", () => {
-        fullApplyCalls += 1;
+        profileCalls += 1;
         return HttpResponse.json([]);
       }),
     );
     localStorage.setItem("cc-switch-last-view", "skills");
-    // pi 不属于任何 Profile 分组，技能组合退回 Claude
     localStorage.setItem("cc-switch-last-app", "pi");
     const { default: App } = await import("@/App");
     renderApp(App);
 
     const trigger = await screen.findByRole("combobox", {
-      name: "skills.combo.ariaLabel",
+      name: "skills.group.ariaLabel",
     });
-    expect(trigger).toHaveAttribute("title", "skills.combo.tooltip");
-    // 当前启用的 Skill 集合与「Frontend」一致
+    expect(trigger).toHaveAttribute("title", "skills.group.tooltip");
+    // pi 当前启用的 Skill 集合与「Frontend」一致
     await waitFor(() => expect(trigger).toHaveTextContent("Frontend"));
 
     fireEvent.click(trigger);
     fireEvent.click(await screen.findByText("Docs"));
 
-    await waitFor(() =>
-      expect(applied).toEqual([{ id: "docs", scope: "claude" }]),
-    );
-    expect(fullApplyCalls).toBe(0);
+    await waitFor(() => expect(applied).toEqual([{ id: "docs", app: "pi" }]));
+    expect(profileCalls).toBe(0);
   });
 
   it("badges the Skills button when the startup check finds updates", async () => {
