@@ -5,7 +5,7 @@
 - 图形：左侧 M、右侧 S；统一宽线条和模块化切口，表达 Skills 的组合与复用。
 - 配色：深海青背景、冰白标识。
 - 原图：`/Users/w_ood/.codex/generated_images/01a132dd-00d1-7172-affa-fc7934a346f6/exec-59299c17-47e4-44b5-988f-aff41b161317.png`。
-- 项目预览：`src/assets/icons/mskills-icon-ms.png`。
+- 项目预览：`docs/branding/mskills-icon-ms.png`。
 - 生成方式：内置 imagegen，先生成 S 模块符号，再按用户要求编辑为 MS。
 - 当前保留方形源图；应用图标的外部轮廓尚未处理。
 

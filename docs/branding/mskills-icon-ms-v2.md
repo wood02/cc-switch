@@ -6,7 +6,7 @@
 - 炭黑底与银白图形，带轻微缎面明暗。
 - 使用内置 imagegen 重新生成，未引用旧版图形。
 - 原始生成文件：`/Users/w_ood/.codex/generated_images/01a132dd-00d1-7172-affa-fc7934a346f6/exec-8d596d19-4966-4020-b7bf-dee5a4b709cd.png`。
-- 项目预览：`src/assets/icons/mskills-icon-ms-v2.png`。
+- 项目预览：`docs/branding/mskills-icon-ms-v2.png`。
 
 ## 提示词
 
