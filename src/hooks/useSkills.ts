@@ -5,6 +5,7 @@ import {
   useQueryClient,
   keepPreviousData,
 } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   skillsApi,
   type SkillBackupEntry,
@@ -220,6 +221,25 @@ export function useScanUnmanagedSkills(options?: { enabled?: boolean }) {
  * 从应用目录导入 Skills
  * 成功后先合并缓存，并在结束后刷新所有可能受影响的列表
  */
+export function useCreateLocalSkill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      directory,
+      description,
+    }: {
+      directory: string;
+      description: string;
+    }) => skillsApi.createLocal(directory, description),
+    onSuccess: (skill) => {
+      queryClient.setQueryData<InstalledSkill[]>(
+        ["skills", "installed"],
+        (oldData) => oldData && [...oldData, skill],
+      );
+    },
+  });
+}
+
 export function useImportSkillsFromApps() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -416,8 +436,10 @@ export function useBestSkillsRanking(
   date: string,
   enabled: boolean,
 ) {
+  // Labels are resolved while parsing, so a language switch needs its own cache entry.
+  const { i18n } = useTranslation();
   return useQuery({
-    queryKey: ["skills", "bestSkills", "ranking", ranking, date],
+    queryKey: ["skills", "bestSkills", "ranking", ranking, date, i18n.language],
     queryFn: async () => {
       const csv = await skillsApi.getBestSkillsRanking(ranking, date);
       return csv === null ? null : parseBestSkills(csv, ranking);

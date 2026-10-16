@@ -48,7 +48,10 @@ import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { useUsageCacheBridge } from "@/hooks/useUsageCacheBridge";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useLastValidValue } from "@/hooks/useLastValidValue";
-import { useScanUnmanagedSkills } from "@/hooks/useSkills";
+import {
+  useCheckSkillUpdates,
+  useScanUnmanagedSkills,
+} from "@/hooks/useSkills";
 import {
   extractErrorMessage,
   translatePiProviderMutationError,
@@ -64,6 +67,7 @@ import {
 } from "@/lib/platform";
 import { AppSwitcher } from "@/components/AppSwitcher";
 import { ProfileSwitcher } from "@/components/profiles/ProfileSwitcher";
+import { APP_PROFILE_SCOPE } from "@/components/profiles/scope";
 import { ProviderList } from "@/components/providers/ProviderList";
 import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
@@ -136,6 +140,7 @@ interface SyncStatusUpdatedPayload {
 
 const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
 const HEADER_HEIGHT = 64; // px
+const SKILL_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const STORAGE_KEY = "cc-switch-last-app";
 const getInitialApp = (): AppId => {
@@ -195,6 +200,30 @@ function App() {
       isChecking: false,
       hasSkills: false,
     });
+  const { data: skillUpdates, refetch: checkSkillUpdates } =
+    useCheckSkillUpdates();
+  const skillUpdateCount = skillUpdates?.length ?? 0;
+
+  // 启动时和之后每 6 小时静默检查一次。查询本身保持 disabled：检查要下载各来源仓库 ZIP，
+  // 不能让切换 Profile 等处的 ["skills"] 失效顺带重新下载。
+  useEffect(() => {
+    void checkSkillUpdates();
+    const timer = setInterval(
+      () => void checkSkillUpdates(),
+      SKILL_UPDATE_CHECK_INTERVAL_MS,
+    );
+    return () => clearInterval(timer);
+  }, [checkSkillUpdates]);
+  const skillsButtonTitle =
+    skillUpdateCount > 0
+      ? `${t("skills.manage")} · ${t("skills.updatesFound", { count: skillUpdateCount })}`
+      : t("skills.manage");
+  const skillUpdateBadge = skillUpdateCount > 0 && (
+    <span
+      aria-hidden
+      className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-orange-500"
+    />
+  );
 
   useEffect(() => {
     localStorage.setItem(VIEW_STORAGE_KEY, currentView);
@@ -1357,6 +1386,15 @@ function App() {
                     t("openclaw.agents.title")}
                   {currentView === "hermesMemory" && t("hermes.memory.title")}
                 </h1>
+                {/* Skills 页跨应用，当前应用不属于任何 Profile 分组时退回 Claude 组 */}
+                {currentView === "skills" &&
+                  (settingsData?.showProfileSwitcher ?? true) && (
+                    <ProfileSwitcher
+                      activeApp={
+                        APP_PROFILE_SCOPE[activeApp] ? activeApp : "claude"
+                      }
+                    />
+                  )}
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -1543,6 +1581,18 @@ function App() {
                       size="sm"
                       disabled={skillsManagementBusy}
                       onClick={() =>
+                        unifiedSkillsPanelRef.current?.openCreate()
+                      }
+                      className="hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      {t("skills.create.button")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={skillsManagementBusy}
+                      onClick={() =>
                         unifiedSkillsPanelRef.current?.openImport()
                       }
                       className="relative hover:bg-black/5 disabled:opacity-100 dark:hover:bg-white/5"
@@ -1619,10 +1669,11 @@ function App() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setCurrentView("skills")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("skills.manage")}
+                                className="relative text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
+                                title={skillsButtonTitle}
                               >
                                 <Wrench className="w-4 h-4" />
+                                {skillUpdateBadge}
                               </Button>
                               <Button
                                 variant="ghost"
@@ -1709,15 +1760,16 @@ function App() {
                                 size="sm"
                                 onClick={() => setCurrentView("skills")}
                                 className={cn(
-                                  "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5",
+                                  "relative text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5",
                                   "transition-all duration-200 ease-in-out overflow-hidden",
                                   hasSkillsSupport
                                     ? "opacity-100 w-8 scale-100 px-2"
                                     : "opacity-0 w-0 scale-75 pointer-events-none px-0 -ml-1",
                                 )}
-                                title={t("skills.manage")}
+                                title={skillsButtonTitle}
                               >
                                 <Wrench className="flex-shrink-0 w-4 h-4" />
+                                {skillUpdateBadge}
                               </Button>
                               <Button
                                 variant="ghost"

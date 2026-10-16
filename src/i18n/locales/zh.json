@@ -2625,7 +2625,42 @@
       "historyFailed": "历史日期读取失败，仍可查看最新榜单",
       "view": "查看",
       "viewAria": "查看 {{name}}",
-      "unavailable": "暂无链接"
+      "unavailable": "暂无链接",
+      "rankings": {
+        "best-100": "综合推荐",
+        "top-installs": "安装总榜",
+        "trending-7d": "近七天趋势",
+        "social-buzz": "社区热议",
+        "most-active": "活跃更新",
+        "official-100": "官方技能",
+        "official-vendors": "官方厂商",
+        "top-repos": "热门仓库",
+        "rising-stars": "新秀榜"
+      },
+      "metric": {
+        "score": "综合分",
+        "weeklyGrowth": "周增长",
+        "xMentions7d": "X 提及 · 7 天",
+        "lastUpdate": "最近更新",
+        "versions": "{{value}} 个版本",
+        "installsOrDownloads": "安装/下载",
+        "skillsCount": "{{value}} 个技能",
+        "firstSeen": "收录",
+        "days": "{{value}} 天",
+        "installs": "安装量",
+        "downloads": "下载量"
+      },
+      "platform": {
+        "tencent": "腾讯",
+        "skillhubCn": "腾讯 SkillHub"
+      },
+      "errors": {
+        "csvFormat": "榜单 CSV 格式错误",
+        "csvQuote": "榜单 CSV 引号未闭合",
+        "csvFields": "榜单 CSV 缺少必要字段",
+        "csvColumns": "榜单 CSV 列数不一致",
+        "rowInvalid": "榜单条目标识或排名无效"
+      }
     },
     "skillssh": {
       "searchPlaceholder": "搜索 skills.sh（可选，至少 2 个字符）...",
@@ -2702,6 +2737,15 @@
       "successSingle": "技能 {{name}} 已安装",
       "successMultiple": "成功安装 {{count}} 个技能",
       "noSkillsFound": "ZIP 文件中未找到技能（需包含 SKILL.md 文件）"
+    },
+    "create": {
+      "button": "新建",
+      "title": "新建 Skill",
+      "description": "在 Skills 目录中按模板生成 SKILL.md，创建后可直接编辑；默认不启用到任何应用。",
+      "name": "名称",
+      "nameHint": "仅限小写字母、数字和连字符，最多 64 个字符，同时作为目录名。",
+      "summary": "简介（可选）",
+      "submit": "创建并编辑"
     }
   },
   "deeplink": {

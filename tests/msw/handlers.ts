@@ -47,6 +47,7 @@ export const handlers = [
     success(null),
   ),
   http.post(`${TAURI_ENDPOINT}/list_profiles`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/check_skill_updates`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_providers`, async ({ request }) => {
     const { app } = await withJson<{ app: AppId }>(request);
     return success(getProviders(app));

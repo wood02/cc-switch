@@ -1,4 +1,6 @@
+import i18n from "i18next";
 import { describe, expect, it } from "vitest";
+import en from "@/i18n/locales/en.json";
 import { BEST_SKILLS_RANKINGS, parseBestSkills } from "@/lib/bestSkills";
 // First two rows of each ranking, sampled 2026-10-15 from Best Skills by Linkly AI:
 // https://github.com/LinklyAI/best-skills (data: https://creativecommons.org/licenses/by/4.0/).
@@ -113,6 +115,17 @@ describe("Best Skills CSV", () => {
           "best-100",
         )[0].skill,
       ).toBeUndefined();
+    }
+  });
+
+  it("uses the active language for labels and number formatting", async () => {
+    i18n.addResourceBundle("en", "translation", en, true, true);
+    await i18n.changeLanguage("en");
+    try {
+      const [first] = parseBestSkills(fixtures["top-installs"], "top-installs");
+      expect(first.metric).toMatchObject({ label: "Installs", value: "3.9M" });
+    } finally {
+      await i18n.changeLanguage("zh");
     }
   });
 });

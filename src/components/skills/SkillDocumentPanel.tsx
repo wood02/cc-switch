@@ -17,9 +17,11 @@ import { SkillMarkdownPreview } from "./SkillMarkdownPreview";
 export function SkillDocumentPanel({
   skill,
   onClose,
+  startEditing = false,
 }: {
   skill: InstalledSkill;
   onClose: () => void;
+  startEditing?: boolean;
 }) {
   const { t } = useTranslation();
   const darkMode = useDarkMode();
@@ -40,7 +42,7 @@ export function SkillDocumentPanel({
     retry: false,
   });
   const [content, setContent] = useState("");
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [saving, setSaving] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const savingRef = useRef(false);

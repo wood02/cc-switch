@@ -2687,6 +2687,65 @@
       "successSingle": "Skill {{name}} installed",
       "successMultiple": "Successfully installed {{count}} skills",
       "noSkillsFound": "No skills found in ZIP file (requires SKILL.md file)"
+    },
+    "custom": {
+      "source": "Source",
+      "ranking": "Ranking",
+      "date": "Data date",
+      "latest": "Latest",
+      "refresh": "Refresh ranking",
+      "loadFailed": "Failed to load ranking",
+      "missing": "This ranking is not available for that date",
+      "backToLatest": "Back to latest",
+      "empty": "This ranking has no entries",
+      "historyFailed": "Could not load history dates; the latest ranking is still available",
+      "view": "View",
+      "viewAria": "View {{name}}",
+      "unavailable": "No link",
+      "rankings": {
+        "best-100": "Best overall",
+        "top-installs": "Most installed",
+        "trending-7d": "Trending (7 days)",
+        "social-buzz": "Social buzz",
+        "most-active": "Most active",
+        "official-100": "Official skills",
+        "official-vendors": "Official vendors",
+        "top-repos": "Top repositories",
+        "rising-stars": "Rising stars"
+      },
+      "metric": {
+        "score": "Score",
+        "weeklyGrowth": "Weekly growth",
+        "xMentions7d": "X mentions · 7 days",
+        "lastUpdate": "Last updated",
+        "versions": "{{value}} versions",
+        "installsOrDownloads": "Installs/downloads",
+        "skillsCount": "{{value}} skills",
+        "firstSeen": "Listed",
+        "days": "{{value}} days",
+        "installs": "Installs",
+        "downloads": "Downloads"
+      },
+      "platform": {
+        "tencent": "Tencent",
+        "skillhubCn": "Tencent SkillHub"
+      },
+      "errors": {
+        "csvFormat": "Malformed ranking CSV",
+        "csvQuote": "Unclosed quote in ranking CSV",
+        "csvFields": "Ranking CSV is missing required columns",
+        "csvColumns": "Ranking CSV has inconsistent column counts",
+        "rowInvalid": "Invalid ranking entry identity or rank"
+      }
+    },
+    "create": {
+      "button": "New",
+      "title": "New Skill",
+      "description": "Generates SKILL.md from a template in the Skills directory and opens it for editing. It is not enabled for any app by default.",
+      "name": "Name",
+      "nameHint": "Lowercase letters, digits and hyphens only, up to 64 characters. Also used as the directory name.",
+      "summary": "Description (optional)",
+      "submit": "Create and edit"
     }
   },
   "deeplink": {

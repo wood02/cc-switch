@@ -32,7 +32,7 @@ fn ranking_url(ranking: &str, date: &str) -> Result<String> {
 async fn fetch(url: &str) -> Result<Option<String>> {
     let mut response = crate::proxy::http_client::get()
         .get(url)
-        .header(reqwest::header::USER_AGENT, "cc-switch")
+        .header(reqwest::header::USER_AGENT, "MSkills")
         .header(reqwest::header::CACHE_CONTROL, "no-cache")
         .timeout(Duration::from_secs(20))
         .send()
