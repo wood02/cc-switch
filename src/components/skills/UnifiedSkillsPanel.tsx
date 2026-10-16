@@ -255,7 +255,7 @@ const UnifiedSkillsPanel = React.forwardRef<
         ...new Set(
           (skills ?? []).map(getSkillSource).filter((s) => s !== "local"),
         ),
-      ].sort(),
+      ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
     [skills],
   );
   const hasLocalSkills = (skills ?? []).some(

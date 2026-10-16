@@ -632,6 +632,12 @@ describe("UnifiedSkillsPanel", () => {
         repoOwner: undefined,
         repoName: undefined,
       }),
+      makeInstalledSkill({
+        id: "upper-id",
+        name: "Upper Skill",
+        repoOwner: "Zed",
+        repoName: "pack",
+      }),
     ];
     renderPanel();
 
@@ -639,6 +645,16 @@ describe("UnifiedSkillsPanel", () => {
     await user.click(
       screen.getByRole("combobox", { name: "skills.filter.repo" }),
     );
+    // 全部、本地在前，仓库按 a-z 排序且不区分大小写
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual([
+      "skills.filter.all",
+      "skills.local",
+      "other/pack",
+      "owner/repo",
+      "Zed/pack",
+    ]);
     await user.click(screen.getByRole("option", { name: "skills.local" }));
 
     expect(screen.getByText("Local Skill")).toBeInTheDocument();
