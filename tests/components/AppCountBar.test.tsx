@@ -10,6 +10,88 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("AppCountBar", () => {
+  it("shows enabled and usage together while bulk toggles depend only on enabled count", () => {
+    const onToggleAll = vi.fn();
+    render(
+      <AppCountBar
+        totalLabel=""
+        leading={<span>Calls</span>}
+        countsLabel={
+          <>
+            <span>Enabled</span>
+            <span>/ Calls</span>
+          </>
+        }
+        formatCount={(_app, count) => `${count}个 / 8次`}
+        appIds={["codex"]}
+        counts={{ codex: 3 }}
+        totalCount={4}
+        onToggleAll={onToggleAll}
+      />,
+    );
+    const control = screen.getByRole("checkbox");
+    expect(control).toHaveTextContent("3个 / 8次");
+    expect(control).toHaveAttribute("aria-checked", "mixed");
+    fireEvent.click(control);
+    expect(onToggleAll).toHaveBeenCalledWith("codex", true);
+  });
+
+  it("keeps all agents directly available with working bulk controls", () => {
+    const onToggleAll = vi.fn();
+    render(
+      <div style={{ width: 320 }}>
+        <AppCountBar
+          totalLabel=""
+          countsLabel="Enabled"
+          appIds={[
+            "claude",
+            "codex",
+            "gemini",
+            "grokbuild",
+            "opencode",
+            "hermes",
+            "mcode",
+          ]}
+          counts={{ claude: 1, codex: 1, hermes: 1, mcode: 1 }}
+          totalCount={2}
+          onToggleAll={onToggleAll}
+        />
+      </div>,
+    );
+    expect(screen.getAllByRole("checkbox")).toHaveLength(7);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "common.enableAllForApp:MiniMax Code",
+      }),
+    );
+    expect(onToggleAll).toHaveBeenCalledWith("mcode", true);
+  });
+
+  it("labels enabled counts while preserving the bulk action and description", () => {
+    const onToggleAll = vi.fn();
+    render(
+      <AppCountBar
+        totalLabel=""
+        leading={<span>Calls</span>}
+        countsLabel="Enabled skills (count)"
+        getCountDescription={(app, count) =>
+          `${count} skills enabled for ${app}`
+        }
+        counts={{ codex: 3 }}
+        appIds={["codex"]}
+        totalCount={4}
+        onToggleAll={onToggleAll}
+      />,
+    );
+    expect(screen.getByText("Enabled skills (count)")).toBeInTheDocument();
+    const control = screen.getByRole("checkbox");
+    expect(control.title).toContain("3 skills enabled for codex");
+    expect(control).toHaveClass("bg-blue-500/10");
+    fireEvent.click(control);
+    expect(onToggleAll).toHaveBeenCalledWith("codex", true);
+  });
+
   it("keeps legacy counts non-interactive without a bulk callback", () => {
     render(
       <AppCountBar

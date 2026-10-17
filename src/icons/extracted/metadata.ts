@@ -287,6 +287,13 @@ export const iconMetadata: Record<string, IconMetadata> = {
     keywords: ["code0", "code0ai", "aggregator", "relay", "gateway", "gpt"],
     defaultColor: "#20C050",
   },
+  codex: {
+    name: "codex",
+    displayName: "Codex",
+    category: "ai-provider",
+    keywords: ["codex", "openai", "coding", "agent"],
+    defaultColor: "#0A84FF",
+  },
   cohere: {
     name: "cohere",
     displayName: "Cohere",

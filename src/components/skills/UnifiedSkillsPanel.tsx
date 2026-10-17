@@ -18,6 +18,7 @@ import {
   type SkillBackupEntry,
   useDeleteSkillBackup,
   useInstalledSkills,
+  useSkillUsage,
   useSkillBackups,
   useRestoreSkillBackup,
   useBulkToggleSkillApp,
@@ -38,7 +39,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { settingsApi, skillsApi } from "@/lib/api";
 import { toast } from "sonner";
-import { SKILLS_APP_IDS } from "@/config/appConfig";
+import { APP_ICON_MAP, SKILLS_APP_IDS } from "@/config/appConfig";
 import { AppCountBar } from "@/components/common/AppCountBar";
 import { AppToggleGroup } from "@/components/common/AppToggleGroup";
 import { ListItemRow } from "@/components/common/ListItemRow";
@@ -62,6 +63,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ImeSafeInput } from "@/components/ui/ime-safe-input";
+import type {
+  SkillUsageRange,
+  SkillUsageSnapshot,
+  SkillUsageSummary,
+} from "@/lib/api/skills";
+import { SkillUsageTrend } from "./SkillUsageTrend";
+import { skillUsageColor, skillUsageTotals } from "@/lib/skillUsage";
 
 const IMPORT_SKILLS_APP_IDS = SKILLS_APP_IDS.filter((app) => app !== "pi");
 
@@ -129,6 +137,11 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [searchQuery, setSearchQuery] = useState("");
   // "all" | "local" | "owner/repo"
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState("name");
+  const [usageRange, setUsageRange] = useState<SkillUsageRange>("day");
+  const usage = useSkillUsage();
+  const usageSnapshot = usage.data?.snapshots?.[usageRange];
+  const usageError = usage.isError || !!usage.data?.status.error;
   const [writePending, setWritePending] = useState(false);
   const writeLockRef = React.useRef(false);
   const checkUpdatesLockRef = React.useRef(false);
@@ -325,6 +338,58 @@ const UnifiedSkillsPanel = React.forwardRef<
     });
     return counts;
   }, [filteredSkills]);
+
+  const usageRecords = useMemo(() => {
+    const grouped = new Map<string, SkillUsageSummary[]>();
+    for (const record of usageSnapshot?.records ?? []) {
+      const rows = grouped.get(record.skillName) ?? [];
+      rows.push(record);
+      rows.sort((a, b) => a.app.localeCompare(b.app));
+      grouped.set(record.skillName, rows);
+    }
+    return grouped;
+  }, [usageSnapshot]);
+
+  const sortedSkills = useMemo(() => {
+    const counts = new Map(
+      [...usageRecords].map(([name, rows]) => [
+        name,
+        rows.reduce((sum, row) => sum + row.count, 0),
+      ]),
+    );
+    return [...filteredSkills].sort((a, b) => {
+      if (sortOrder === "usage") {
+        const countDifference =
+          (counts.get(b.directory.split(/[\\/]/).pop() ?? "") ?? 0) -
+          (counts.get(a.directory.split(/[\\/]/).pop() ?? "") ?? 0);
+        if (countDifference) return countDifference;
+      }
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+  }, [filteredSkills, sortOrder, usageRecords]);
+
+  const usageSkillNames = useMemo(
+    () =>
+      new Set(
+        filteredSkills.map(
+          (skill) => skill.directory.split(/[\\/]/).pop() ?? "",
+        ),
+      ),
+    [filteredSkills],
+  );
+  const usageTotal = (snapshot?: SkillUsageSnapshot) => {
+    const totals = skillUsageTotals(snapshot, usageSkillNames);
+    return totals
+      ? Object.values(totals).reduce((sum, count) => sum + count, 0)
+      : undefined;
+  };
+  const agentUsageTotals = skillUsageTotals(usageSnapshot, usageSkillNames);
+  const agentUsageLabel = (app: AppId) => {
+    if (!(app in skillUsageColor)) return "—";
+    return agentUsageTotals
+      ? t("skills.usage.callCount", { count: agentUsageTotals[app] ?? 0 })
+      : "…";
+  };
 
   const pendingApp = bulkToggleAppMutation.isPending
     ? bulkToggleAppMutation.variables?.app
@@ -718,13 +783,76 @@ const UnifiedSkillsPanel = React.forwardRef<
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <AppCountBar
-            totalLabel={
-              filteredSkills.length !== (skills?.length ?? 0)
-                ? t("skills.installedFiltered", {
-                    shown: filteredSkills.length,
-                    count: skills?.length ?? 0,
-                  })
-                : t("skills.installed", { count: skills?.length || 0 })
+            totalLabel=""
+            leading={
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
+                  {t("skills.usage.title")}
+                </span>
+                <div
+                  className="inline-flex gap-0.5 rounded-lg border border-border/50 bg-muted/50 p-1"
+                  role="group"
+                  aria-label={t("skills.usage.range")}
+                >
+                  {(["day", "week"] as const).map((range) => (
+                    <button
+                      key={range}
+                      type="button"
+                      aria-pressed={usageRange === range}
+                      onClick={() => setUsageRange(range)}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-xs transition-colors",
+                        usageRange === range
+                          ? "bg-blue-50 font-medium text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/30"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {t(
+                        range === "day"
+                          ? "skills.usage.today"
+                          : "skills.usage.week",
+                      )}{" "}
+                      <span
+                        className={cn(
+                          "font-medium tabular-nums",
+                          usageRange !== range && "text-foreground",
+                        )}
+                      >
+                        {usageTotal(usage.data?.snapshots?.[range]) ?? "…"}
+                      </span>{" "}
+                      {t("skills.usage.times")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            }
+            countsLabel={
+              <span className="flex flex-col items-start text-[11px]">
+                <span>{t("skills.usage.enabledTitle")}</span>
+                <span>/ {t("skills.usage.callsTitle")}</span>
+              </span>
+            }
+            formatCount={(app, count) => (
+              <>
+                <span>{t("skills.usage.enabledCount", { count })}</span>
+                <span className="font-normal text-muted-foreground/60">/</span>
+                <span>{agentUsageLabel(app)}</span>
+              </>
+            )}
+            getCountDescription={(app, count) =>
+              [
+                t("skills.usage.enabledForApp", {
+                  app: APP_ICON_MAP[app].label,
+                  count,
+                }),
+                t(
+                  usageRange === "day"
+                    ? "skills.usage.today"
+                    : "skills.usage.week",
+                ) +
+                  ": " +
+                  agentUsageLabel(app),
+              ].join("\n")
             }
             counts={enabledCounts}
             appIds={visibleSkillAppIds}
@@ -763,37 +891,70 @@ const UnifiedSkillsPanel = React.forwardRef<
         </div>
       </div>
 
-      <div className="mb-4 flex flex-shrink-0 items-center gap-2">
+      <div className="mb-4 flex flex-shrink-0 flex-wrap items-center gap-2">
         <ManagementListSearch
           value={searchQuery}
           onValueChange={setSearchQuery}
           placeholder={t("skills.installedSearchPlaceholder")}
           ariaLabel={t("skills.installedSearchAriaLabel")}
           clearLabel={t("common.clear")}
-          className="mb-0 min-w-0 flex-1"
+          className="mb-0 min-w-48 flex-1"
         />
-        {repoSources.length + (hasLocalSkills ? 1 : 0) > 1 && (
-          <Select value={activeSourceFilter} onValueChange={setSourceFilter}>
-            <SelectTrigger
-              aria-label={t("skills.filter.repo")}
-              className="w-44 shrink-0"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-64">
-              <SelectItem value="all">{t("skills.filter.all")}</SelectItem>
-              {hasLocalSkills && (
-                <SelectItem value="local">{t("skills.local")}</SelectItem>
-              )}
-              {repoSources.map((source) => (
-                <SelectItem key={source} value={source}>
-                  {source}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <Select value={activeSourceFilter} onValueChange={setSourceFilter}>
+          <SelectTrigger
+            aria-label={t("skills.filter.repo")}
+            className="w-44 shrink-0"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-64">
+            <SelectItem value="all">
+              {t("skills.usage.allSources", { count: skills?.length ?? 0 })}
+            </SelectItem>
+            {hasLocalSkills && (
+              <SelectItem value="local">
+                {t("skills.local")}（
+                {
+                  skills?.filter((skill) => getSkillSource(skill) === "local")
+                    .length
+                }
+                ）
+              </SelectItem>
+            )}
+            {repoSources.map((source) => (
+              <SelectItem key={source} value={source}>
+                {source}（
+                {
+                  skills?.filter((skill) => getSkillSource(skill) === source)
+                    .length
+                }
+                ）
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={sortOrder} onValueChange={setSortOrder}>
+          <SelectTrigger
+            aria-label={t("skills.usage.sort")}
+            className="w-32 shrink-0"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">{t("skills.usage.sortName")}</SelectItem>
+            <SelectItem value="usage">{t("skills.usage.sortUsage")}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      {usageError && (
+        <p
+          role="alert"
+          className="mb-2 shrink-0 text-xs text-amber-700 dark:text-amber-400"
+        >
+          {t("skills.usage.incomplete")}
+        </p>
+      )}
 
       <ScrollArea className="-mr-3 flex-1 min-h-0" type="auto">
         <div className="pb-24 pr-3">
@@ -841,7 +1002,7 @@ const UnifiedSkillsPanel = React.forwardRef<
           ) : (
             <TooltipProvider delayDuration={300}>
               <div className="rounded-xl border border-border-default overflow-hidden">
-                {filteredSkills.map((skill, index) => (
+                {sortedSkills.map((skill, index) => (
                   <InstalledSkillListItem
                     key={skill.id}
                     skill={skill}
@@ -852,11 +1013,24 @@ const UnifiedSkillsPanel = React.forwardRef<
                     }
                     actionsDisabled={interactionBlocked}
                     appIds={visibleSkillAppIds}
+                    usageRecords={
+                      usageRecords.get(
+                        skill.directory.split(/[\\/]/).pop() ?? "",
+                      ) ?? []
+                    }
+                    usageRange={usageRange}
+                    usageBoundaries={usage.boundaries[usageRange]}
+                    usageStatus={
+                      usageSnapshot ??
+                      (usageError
+                        ? { completed: false, error: "unavailable" }
+                        : usage.data?.status)
+                    }
                     onToggleApp={handleToggleApp}
                     onUninstall={() => handleUninstall(skill)}
                     onPreview={() => setPreviewSkill(skill)}
                     onUpdate={() => handleUpdateSkill(skill)}
-                    isLast={index === filteredSkills.length - 1}
+                    isLast={index === sortedSkills.length - 1}
                   />
                 ))}
               </div>
@@ -928,6 +1102,10 @@ UnifiedSkillsPanel.displayName = "UnifiedSkillsPanel";
 interface InstalledSkillListItemProps {
   skill: InstalledSkill;
   appIds: AppId[];
+  usageRecords: SkillUsageSummary[];
+  usageRange: SkillUsageRange;
+  usageBoundaries: number[];
+  usageStatus?: Pick<SkillUsageSnapshot, "completed" | "error">;
   hasUpdate?: boolean;
   isUpdating?: boolean;
   actionsDisabled?: boolean;
@@ -941,6 +1119,10 @@ interface InstalledSkillListItemProps {
 const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   skill,
   appIds,
+  usageRecords,
+  usageRange,
+  usageBoundaries,
+  usageStatus,
   hasUpdate,
   isUpdating,
   actionsDisabled,
@@ -951,6 +1133,50 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
   isLast,
 }) => {
   const { t } = useTranslation();
+  const [hoveredApp, setHoveredApp] = useState<AppId | null>(null);
+  const usageByApp = Object.fromEntries(
+    appIds.map((app) => {
+      const record = usageRecords.find((record) => record.app === app);
+      const supported = app === "claude" || app === "codex";
+      return [
+        app,
+        {
+          count: record?.count ?? 0,
+          label: !supported
+            ? t("skills.usage.unsupported")
+            : [
+                record
+                  ? t("skills.usage.details", {
+                      count: record.count,
+                      sessions: record.sessions,
+                      manual: record.manualCount,
+                      agent: record.agentCount,
+                    })
+                  : usageStatus?.error
+                    ? t("skills.usage.incomplete")
+                    : !usageStatus?.completed
+                      ? t("skills.usage.scanning")
+                      : t(
+                          usageRange === "day"
+                            ? "skills.usage.unusedToday"
+                            : "skills.usage.unusedWeek",
+                        ),
+                record
+                  ? t("skills.usage.lastUsed", {
+                      time: new Date(record.lastUsed * 1000).toLocaleString(),
+                    })
+                  : "",
+                record && !skill.apps[app]
+                  ? t("skills.usage.disabledWithUsage")
+                  : "",
+                app === "codex" ? t("skills.usage.estimated") : "",
+              ]
+                .filter(Boolean)
+                .join("\n"),
+        },
+      ];
+    }),
+  );
 
   const openDocs = async () => {
     if (!skill.readmeUrl) return;
@@ -1006,11 +1232,22 @@ const InstalledSkillListItem: React.FC<InstalledSkillListItemProps> = ({
         )}
       </div>
 
+      <SkillUsageTrend
+        records={usageRecords}
+        boundaries={usageBoundaries}
+        range={usageRange}
+        hoveredApp={hoveredApp}
+        status={usageStatus}
+      />
+
       <AppToggleGroup
         apps={skill.apps}
         onToggle={(app, enabled) => onToggleApp(skill.id, app, enabled)}
         appIds={appIds}
         disabled={actionsDisabled}
+        usage={usageByApp}
+        hoveredApp={hoveredApp}
+        onAppHover={setHoveredApp}
       />
 
       <div

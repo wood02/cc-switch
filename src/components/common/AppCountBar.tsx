@@ -7,6 +7,10 @@ import { cn } from "@/lib/utils";
 
 interface AppCountBarProps {
   totalLabel: string;
+  leading?: React.ReactNode;
+  countsLabel?: React.ReactNode;
+  formatCount?: (app: AppId, count: number) => React.ReactNode;
+  getCountDescription?: (app: AppId, count: number) => string;
   counts: Partial<Record<AppId, number>>;
   appIds?: AppId[];
   totalCount?: number;
@@ -17,6 +21,10 @@ interface AppCountBarProps {
 
 export const AppCountBar: React.FC<AppCountBarProps> = ({
   totalLabel,
+  leading,
+  countsLabel,
+  formatCount,
+  getCountDescription,
   counts,
   appIds = APP_IDS,
   totalCount,
@@ -28,77 +36,108 @@ export const AppCountBar: React.FC<AppCountBarProps> = ({
   const bulkToggleEnabled = totalCount !== undefined && !!onToggleAll;
   const bulkTotalCount = totalCount ?? 0;
   const hasPendingBulkToggle = pendingApp !== undefined && pendingApp !== null;
+  const renderCount = (app: AppId) => {
+    const count = counts[app] ?? 0;
+    const allEnabled =
+      bulkToggleEnabled && bulkTotalCount > 0 && count >= bulkTotalCount;
+    const partiallyEnabled =
+      bulkToggleEnabled && count > 0 && count < bulkTotalCount;
+    const pending = pendingApp === app;
+    const actionLabel = allEnabled
+      ? t("common.disableAllForApp", { app: APP_ICON_MAP[app].label })
+      : t("common.enableAllForApp", { app: APP_ICON_MAP[app].label });
 
-  return (
-    <div className="mb-4 flex flex-shrink-0 items-center gap-4 rounded-xl border border-white/10 px-6 py-4 glass">
-      <Badge
-        variant="outline"
-        className="h-7 shrink-0 whitespace-nowrap bg-background/50 px-3"
+    if (!bulkToggleEnabled) {
+      return (
+        <Badge
+          key={app}
+          variant="secondary"
+          className={APP_ICON_MAP[app].badgeClass}
+        >
+          <span className="opacity-75">{APP_ICON_MAP[app].label}:</span>
+          <span className="font-bold ml-1">
+            {formatCount?.(app, count) ?? count}
+          </span>
+        </Badge>
+      );
+    }
+    return (
+      <button
+        key={app}
+        type="button"
+        role="checkbox"
+        aria-checked={partiallyEnabled ? "mixed" : allEnabled}
+        aria-busy={pending}
+        aria-label={actionLabel}
+        title={[getCountDescription?.(app, count), actionLabel]
+          .filter(Boolean)
+          .join("\n")}
+        data-selection-state={
+          pending
+            ? "pending"
+            : allEnabled
+              ? "all"
+              : partiallyEnabled
+                ? "partial"
+                : "none"
+        }
+        disabled={disabled || bulkTotalCount === 0 || hasPendingBulkToggle}
+        onClick={() => void onToggleAll?.(app, !allEnabled)}
+        className={cn(
+          badgeVariants({ variant: "secondary" }),
+          APP_ICON_MAP[app].badgeClass,
+          "shrink-0 cursor-pointer select-none whitespace-nowrap focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed",
+          pending && "cursor-wait disabled:cursor-wait",
+        )}
       >
-        {totalLabel}
-      </Badge>
-      <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
-        <div className="ml-auto flex w-max min-w-full items-center justify-end gap-2">
-          {appIds.map((app) => {
-            const count = counts[app] ?? 0;
-            const allEnabled =
-              bulkToggleEnabled &&
-              bulkTotalCount > 0 &&
-              count >= bulkTotalCount;
-            const partiallyEnabled =
-              bulkToggleEnabled && count > 0 && count < bulkTotalCount;
-            const pending = pendingApp === app;
-            const actionLabel = allEnabled
-              ? t("common.disableAllForApp", { app: APP_ICON_MAP[app].label })
-              : t("common.enableAllForApp", { app: APP_ICON_MAP[app].label });
-
-            if (!bulkToggleEnabled) {
-              return (
-                <Badge
-                  key={app}
-                  variant="secondary"
-                  className={APP_ICON_MAP[app].badgeClass}
-                >
-                  <span className="opacity-75">{APP_ICON_MAP[app].label}:</span>
-                  <span className="font-bold ml-1">{count}</span>
-                </Badge>
-              );
-            }
-
-            return (
-              <button
-                key={app}
-                type="button"
-                role="checkbox"
-                aria-checked={partiallyEnabled ? "mixed" : allEnabled}
-                aria-busy={pending}
-                aria-label={actionLabel}
-                title={actionLabel}
-                data-selection-state={
-                  pending
-                    ? "pending"
-                    : allEnabled
-                      ? "all"
-                      : partiallyEnabled
-                        ? "partial"
-                        : "none"
-                }
-                disabled={
-                  disabled || bulkTotalCount === 0 || hasPendingBulkToggle
-                }
-                onClick={() => void onToggleAll?.(app, !allEnabled)}
-                className={cn(
-                  badgeVariants({ variant: "secondary" }),
-                  APP_ICON_MAP[app].badgeClass,
-                  "shrink-0 cursor-pointer select-none whitespace-nowrap focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed",
-                  pending && "cursor-wait disabled:cursor-wait",
-                )}
-              >
-                <span className="opacity-75">{APP_ICON_MAP[app].label}:</span>
-                <span className="ml-1 font-bold">{count}</span>
-              </button>
-            );
-          })}
+        <span className="opacity-75">{APP_ICON_MAP[app].label}:</span>
+        <span className="ml-1 inline-flex items-baseline gap-1 font-bold tabular-nums">
+          {formatCount?.(app, count) ?? count}
+        </span>
+      </button>
+    );
+  };
+  return (
+    <div
+      className={cn(
+        "mb-4 flex flex-shrink-0 items-center gap-4 rounded-xl border border-white/10 glass",
+        countsLabel ? "px-4 py-3" : "px-6 py-4",
+      )}
+    >
+      {leading ?? (
+        <Badge
+          variant="outline"
+          className="h-7 shrink-0 whitespace-nowrap bg-background/50 px-3"
+        >
+          {totalLabel}
+        </Badge>
+      )}
+      <div
+        className={cn(
+          "min-w-0 flex-1",
+          countsLabel && "flex items-center gap-3 border-l border-border pl-4",
+        )}
+      >
+        {countsLabel && (
+          <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+            {countsLabel}
+          </span>
+        )}
+        <div
+          className={
+            countsLabel ? "min-w-0 flex-1" : "overflow-x-auto no-scrollbar"
+          }
+        >
+          <div
+            className={cn(
+              "flex items-center gap-2",
+              countsLabel
+                ? "flex-wrap justify-start"
+                : "ml-auto w-max min-w-full justify-end",
+            )}
+          >
+            {appIds.map(renderCount)}
+          </div>
         </div>
       </div>
     </div>

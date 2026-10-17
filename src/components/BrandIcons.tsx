@@ -5,9 +5,9 @@ interface IconProps {
 
 // 导入本地 SVG 图标
 import ClaudeSvg from "@/icons/extracted/claude.svg?url";
-import OpenAISvg from "@/icons/extracted/openai.svg?url";
 import GeminiSvg from "@/icons/extracted/gemini.svg?url";
 import OpenClawSvg from "@/icons/extracted/claw.svg?url";
+import { ProviderIcon } from "./ProviderIcon";
 
 export function ClaudeIcon({ size = 16, className = "" }: IconProps) {
   return (
@@ -24,14 +24,7 @@ export function ClaudeIcon({ size = 16, className = "" }: IconProps) {
 
 export function CodexIcon({ size = 16, className = "" }: IconProps) {
   return (
-    <img
-      src={OpenAISvg}
-      width={size}
-      height={size}
-      className={`dark:brightness-0 dark:invert ${className}`}
-      alt="Codex"
-      loading="lazy"
-    />
+    <ProviderIcon icon="codex" name="Codex" size={size} className={className} />
   );
 }
 

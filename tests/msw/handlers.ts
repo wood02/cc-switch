@@ -50,6 +50,16 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/list_skill_groups`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/check_skill_updates`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/get_skill_usage`, () =>
+    success({
+      scanning: false,
+      completed: true,
+      filesScanned: 0,
+      filesTotal: 0,
+      error: null,
+      records: [],
+    }),
+  ),
   http.post(`${TAURI_ENDPOINT}/get_providers`, async ({ request }) => {
     const { app } = await withJson<{ app: AppId }>(request);
     return success(getProviders(app));

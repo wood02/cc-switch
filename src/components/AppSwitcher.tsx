@@ -30,7 +30,7 @@ const STORAGE_KEY = "cc-switch-last-app";
 const APP_ICON_NAME: Record<AppId, string> = {
   claude: "claude",
   "claude-desktop": "claude",
-  codex: "openai",
+  codex: "codex",
   gemini: "gemini",
   grokbuild: "grok",
   opencode: "opencode",
