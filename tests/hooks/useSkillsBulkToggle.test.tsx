@@ -71,7 +71,7 @@ describe("Skills management mutation hooks", () => {
     });
 
     await waitFor(() => expect(toggleAppMock).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(2));
     expect(result.current.isPending).toBe(true);
 
     releaseInvalidation?.();
@@ -82,6 +82,7 @@ describe("Skills management mutation hooks", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["skills", "installed"],
     });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["skillGroups"] });
     await waitFor(() => expect(result.current.isPending).toBe(false));
   });
 
@@ -110,7 +111,7 @@ describe("Skills management mutation hooks", () => {
       });
     });
 
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(2));
     expect(result.current.isPending).toBe(true);
 
     releaseInvalidation?.();

@@ -687,8 +687,12 @@ describe("App integration with MSW", () => {
       installedAt: 1,
     });
     const applied: unknown[] = [];
+    let currentGroup = "fe";
     let profileCalls = 0;
     server.use(
+      http.post("http://tauri.local/get_current_skill_group", () =>
+        HttpResponse.json(currentGroup),
+      ),
       http.post("http://tauri.local/list_skill_groups", () =>
         HttpResponse.json([
           { id: "fe", name: "Frontend", skills: ["local:a"] },
@@ -699,7 +703,9 @@ describe("App integration with MSW", () => {
         HttpResponse.json([skill("local:a", true), skill("local:b", false)]),
       ),
       http.post("http://tauri.local/apply_skill_group", async ({ request }) => {
-        applied.push(await request.json());
+        const body = (await request.json()) as { id: string; app: string };
+        applied.push(body);
+        currentGroup = body.id;
         return HttpResponse.json([]);
       }),
       http.post("http://tauri.local/apply_profile", () => {
@@ -723,6 +729,7 @@ describe("App integration with MSW", () => {
     fireEvent.click(await screen.findByText("Docs"));
 
     await waitFor(() => expect(applied).toEqual([{ id: "docs", app: "pi" }]));
+    await waitFor(() => expect(trigger).toHaveTextContent("Docs"));
     expect(profileCalls).toBe(0);
   });
 

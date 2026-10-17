@@ -16,6 +16,11 @@ import type {
 import type { VisibleApps } from "@/types";
 import { settleSkillUsage, type SkillUsageData } from "@/lib/skillUsage";
 
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
+  useIsMutating: () => 0,
+}));
+
 const selectedVisibleApps: VisibleApps = {
   claude: true,
   "claude-desktop": false,

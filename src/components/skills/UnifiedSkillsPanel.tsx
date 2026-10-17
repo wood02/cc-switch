@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useIsMutating } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   Sparkles,
@@ -178,7 +179,10 @@ const UnifiedSkillsPanel = React.forwardRef<
       ? SKILLS_APP_IDS
       : IMPORT_SKILLS_APP_IDS;
 
+  const skillsWritePending =
+    useIsMutating({ mutationKey: ["skills", "write"] }) > 0;
   const mutationPending =
+    skillsWritePending ||
     deleteBackupMutation.isPending ||
     toggleAppMutation.isPending ||
     bulkToggleAppMutation.isPending ||

@@ -7,6 +7,12 @@ import { extractErrorMessage } from "@/utils/errorUtils";
 
 const SKILL_GROUPS_KEY = ["skillGroups"];
 
+export const useCurrentSkillGroupQuery = (app: AppId) =>
+  useQuery({
+    queryKey: [...SKILL_GROUPS_KEY, "current", app],
+    queryFn: () => skillGroupsApi.getCurrent(app),
+  });
+
 export const useSkillGroupsQuery = () =>
   useQuery({
     queryKey: SKILL_GROUPS_KEY,
@@ -18,6 +24,7 @@ export const useCreateSkillGroupMutation = () => {
   const { t } = useTranslation();
 
   return useMutation({
+    mutationKey: ["skills", "write"],
     mutationFn: ({ name, app }: { name: string; app: AppId }) =>
       skillGroupsApi.create(name, app),
     onSuccess: async () => {
@@ -38,6 +45,7 @@ export const useRenameSkillGroupMutation = () => {
   const { t } = useTranslation();
 
   return useMutation({
+    mutationKey: ["skills", "write"],
     mutationFn: ({ id, name }: { id: string; name: string }) =>
       skillGroupsApi.rename(id, name),
     onSuccess: async () => {
@@ -57,6 +65,7 @@ export const useDeleteSkillGroupMutation = () => {
   const { t } = useTranslation();
 
   return useMutation({
+    mutationKey: ["skills", "write"],
     mutationFn: (id: string) => skillGroupsApi.delete(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: SKILL_GROUPS_KEY });
@@ -75,11 +84,10 @@ export const useApplySkillGroupMutation = () => {
   const { t } = useTranslation();
 
   return useMutation({
+    mutationKey: ["skills", "write"],
     mutationFn: ({ id, app }: { id: string; app: AppId; name: string }) =>
       skillGroupsApi.apply(id, app),
     onSuccess: async (warnings, { name }) => {
-      await queryClient.invalidateQueries({ queryKey: ["skills"] });
-
       if (warnings.length > 0) {
         toast.warning(
           t("profiles.applyWarnings", {
@@ -100,5 +108,10 @@ export const useApplySkillGroupMutation = () => {
         closeButton: true,
       });
     },
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: SKILL_GROUPS_KEY }),
+        queryClient.invalidateQueries({ queryKey: ["skills"] }),
+      ]),
   });
 };

@@ -10,6 +10,9 @@ export interface SkillGroup {
 }
 
 export const skillGroupsApi = {
+  async getCurrent(app: AppId): Promise<string | null> {
+    return await invoke("get_current_skill_group", { app });
+  },
   async list(): Promise<SkillGroup[]> {
     return await invoke("list_skill_groups");
   },

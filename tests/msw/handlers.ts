@@ -48,6 +48,7 @@ export const handlers = [
   ),
   http.post(`${TAURI_ENDPOINT}/list_profiles`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/list_skill_groups`, () => success([])),
+  http.post(`${TAURI_ENDPOINT}/get_current_skill_group`, () => success(null)),
   http.post(`${TAURI_ENDPOINT}/check_skill_updates`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_installed_skills`, () => success([])),
   http.post(`${TAURI_ENDPOINT}/get_skill_usage`, () =>
