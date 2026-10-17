@@ -48,6 +48,18 @@ pub fn list_skill_groups(state: State<'_, AppState>) -> Result<Vec<SkillGroupDto
 }
 
 #[tauri::command]
+pub fn get_current_skill_group(
+    state: State<'_, AppState>,
+    app: String,
+) -> Result<Option<String>, String> {
+    let app = parse_app(&app)?;
+    state
+        .db
+        .get_current_skill_group_id(app.as_str())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn create_skill_group(
     state: State<'_, AppState>,
     name: String,

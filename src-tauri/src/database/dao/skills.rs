@@ -203,6 +203,14 @@ impl Database {
     /// 更新 Skill 的应用启用状态
     pub fn update_skill_apps(&self, id: &str, apps: &SkillApps) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
+        Self::update_skill_apps_on_conn(&conn, id, apps)
+    }
+
+    pub(crate) fn update_skill_apps_on_conn(
+        conn: &rusqlite::Connection,
+        id: &str,
+        apps: &SkillApps,
+    ) -> Result<bool, AppError> {
         let affected = conn
             .execute(
                 "UPDATE skills SET enabled_claude = ?1, enabled_codex = ?2, enabled_gemini = ?3, enabled_grokbuild = ?4, enabled_opencode = ?5, enabled_hermes = ?6, enabled_mcode = ?8 WHERE id = ?7",

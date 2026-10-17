@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useIsMutating } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronsUpDown, Layers, Plus, Settings2 } from "lucide-react";
 import {
@@ -31,6 +32,7 @@ import { useInstalledSkills } from "@/hooks/useSkills";
 import {
   useApplySkillGroupMutation,
   useCreateSkillGroupMutation,
+  useCurrentSkillGroupQuery,
   useSkillGroupsQuery,
 } from "@/lib/query/skillGroups";
 import { SkillGroupManageDialog } from "./SkillGroupManageDialog";
@@ -42,7 +44,7 @@ interface SkillGroupSwitcherProps {
 
 /**
  * Skills 页「技能组」切换器：一键把当前应用的 Skill 启用状态切成某个组。
- * 不记「当前组」，启用集合与哪个组一致就勾哪个。
+ * 当前组由后端按应用记录，不根据技能集合推断。
  */
 export function SkillGroupSwitcher({ app }: SkillGroupSwitcherProps) {
   const { t } = useTranslation();
@@ -52,30 +54,23 @@ export function SkillGroupSwitcher({ app }: SkillGroupSwitcherProps) {
   const [newName, setNewName] = useState("");
 
   const { data: groups = [] } = useSkillGroupsQuery();
+  const { data: currentId, isPending: currentPending } =
+    useCurrentSkillGroupQuery(app);
+  const writePending = useIsMutating({ mutationKey: ["skills", "write"] }) > 0;
   const { data: installedSkills = [] } = useInstalledSkills();
   const applyMutation = useApplySkillGroupMutation();
   const createMutation = useCreateSkillGroupMutation();
 
-  // 已卸载的 Skill 不参与匹配和计数
+  // 已卸载的 Skill 不参与计数
   const installedIds = new Set(installedSkills.map((s) => s.id));
-  const enabledIds = new Set(
-    installedSkills
-      .filter((s) => s.apps[app as keyof typeof s.apps])
-      .map((s) => s.id),
-  );
   const groupSkillIds = (group: SkillGroup) =>
     group.skills.filter((id) => installedIds.has(id));
-  const currentGroup = groups.find((group) => {
-    const ids = groupSkillIds(group);
-    return (
-      ids.length === enabledIds.size && ids.every((id) => enabledIds.has(id))
-    );
-  });
+  const currentGroup = groups.find((group) => group.id === currentId);
   const currentName = currentGroup?.name ?? t("skills.group.none");
 
   const handleApply = (group: SkillGroup) => {
+    if (writePending || currentPending) return;
     setOpen(false);
-    if (group.id === currentGroup?.id) return;
     applyMutation.mutate({ id: group.id, app, name: group.name });
   };
 
@@ -97,6 +92,8 @@ export function SkillGroupSwitcher({ app }: SkillGroupSwitcherProps) {
           <button
             type="button"
             role="combobox"
+            disabled={writePending || currentPending}
+            aria-busy={writePending || currentPending}
             aria-expanded={open}
             aria-label={t("skills.group.ariaLabel", { name: currentName })}
             title={t("skills.group.tooltip")}
@@ -127,6 +124,7 @@ export function SkillGroupSwitcher({ app }: SkillGroupSwitcherProps) {
                   {groups.map((group) => (
                     <CommandItem
                       key={group.id}
+                      disabled={writePending || currentPending}
                       value={group.id}
                       keywords={[group.name]}
                       onSelect={() => handleApply(group)}
@@ -153,6 +151,7 @@ export function SkillGroupSwitcher({ app }: SkillGroupSwitcherProps) {
               <CommandGroup>
                 <CommandItem
                   value="__create__"
+                  disabled={writePending || currentPending}
                   keywords={[t("skills.group.create")]}
                   onSelect={() => {
                     setOpen(false);
@@ -165,6 +164,7 @@ export function SkillGroupSwitcher({ app }: SkillGroupSwitcherProps) {
                 {groups.length > 0 && (
                   <CommandItem
                     value="__manage__"
+                    disabled={writePending || currentPending}
                     keywords={[t("skills.group.manage")]}
                     onSelect={() => {
                       setOpen(false);

@@ -8,6 +8,7 @@ use crate::app_config::AppType;
 use crate::database::SkillGroup;
 use crate::error::AppError;
 use crate::services::profile::ProfileService;
+use crate::services::skill::{skill_state_write_guard, SkillService};
 use crate::store::AppState;
 
 pub struct SkillGroupService;
@@ -19,16 +20,16 @@ impl SkillGroupService {
 
     /// 用 app 当前启用的 Skill 新建技能组
     pub fn create(state: &AppState, name: &str, app: &AppType) -> Result<SkillGroup, AppError> {
+        let _guard = skill_state_write_guard();
         let name = name.trim();
         if name.is_empty() {
             return Err(AppError::InvalidInput(
                 "Skill group name is empty".to_string(),
             ));
         }
-        let mut ids: Vec<String> = state
-            .db
-            .get_all_installed_skills()?
-            .values()
+        let mut ids: Vec<String> = SkillService::get_all_installed(&state.db)
+            .map_err(|e| AppError::Config(e.to_string()))?
+            .iter()
             .filter(|s| s.apps.is_enabled_for(app))
             .map(|s| s.id.clone())
             .collect();
@@ -43,10 +44,14 @@ impl SkillGroupService {
             updated_at: Some(now),
         };
         state.db.save_skill_group(&group)?;
+        state
+            .db
+            .set_current_skill_group_id(app.as_str(), Some(&group.id))?;
         Ok(group)
     }
 
     pub fn rename(state: &AppState, id: &str, name: &str) -> Result<SkillGroup, AppError> {
+        let _guard = skill_state_write_guard();
         let name = name.trim();
         if name.is_empty() {
             return Err(AppError::InvalidInput(
@@ -61,6 +66,7 @@ impl SkillGroupService {
     }
 
     pub fn delete(state: &AppState, id: &str) -> Result<(), AppError> {
+        let _guard = skill_state_write_guard();
         if !state.db.delete_skill_group(id)? {
             return Err(AppError::InvalidInput(format!(
                 "Skill group not found: {id}"
@@ -71,10 +77,11 @@ impl SkillGroupService {
 
     /// 把 app 的 Skill 启用状态改成与技能组一致，返回 best-effort 的 warning
     pub fn apply(state: &AppState, id: &str, app: &AppType) -> Result<Vec<String>, AppError> {
+        let _guard = skill_state_write_guard();
         let group = Self::get(state, id)?;
         let ids = decode_ids(&group.skills)?;
         let mut warnings = Vec::new();
-        ProfileService::apply_skill_slot(state, app, &ids, &mut warnings)?;
+        ProfileService::apply_skill_slot_locked(state, app, &ids, &mut warnings, Some(id))?;
         Ok(warnings)
     }
 

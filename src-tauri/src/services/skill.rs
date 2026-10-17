@@ -2237,10 +2237,26 @@ impl SkillService {
     /// 禁用：从应用目录删除
     pub fn toggle_app(db: &Arc<Database>, id: &str, app: &AppType, enabled: bool) -> Result<()> {
         let _state_guard = skill_state_write_guard();
+        Self::toggle_app_locked(db, id, app, enabled)
+    }
+
+    /// The caller holds skill_state_write_guard for the complete switch.
+    pub(crate) fn toggle_app_locked(
+        db: &Arc<Database>,
+        id: &str,
+        app: &AppType,
+        enabled: bool,
+    ) -> Result<()> {
         // 获取当前 skill
         let mut skill = db
             .get_installed_skill(id)?
             .ok_or_else(|| anyhow!("Skill not found: {id}"))?;
+
+        let was_enabled = if matches!(app, AppType::Pi) {
+            Self::skill_exists_in_app(&skill.directory, app)
+        } else {
+            skill.apps.is_enabled_for(app)
+        };
 
         // 更新状态
         skill.apps.set_enabled_for(app, enabled);
@@ -2252,10 +2268,18 @@ impl SkillService {
             Self::remove_from_app(&skill.directory, app)?;
         }
 
-        // Pi follows its native exists=active rule; other apps keep their
-        // established persisted desired-state flags.
-        if !matches!(app, AppType::Pi) {
-            db.update_skill_apps(id, &skill.apps)?;
+        if let Err(error) = db.update_skill_selection(id, app, &skill.apps) {
+            let rollback = if was_enabled {
+                Self::sync_to_app_dir(&skill.directory, app)
+            } else {
+                Self::remove_from_app(&skill.directory, app)
+            };
+            return match rollback {
+                Ok(()) => Err(error.into()),
+                Err(rollback) => Err(anyhow!(
+                    "{error}; restoring skill state also failed: {rollback}"
+                )),
+            };
         }
 
         log::info!("Skill {} 的 {:?} 状态已更新为 {}", skill.name, app, enabled);
@@ -5552,6 +5576,195 @@ mod tests {
             format!("---\nname: {name}\ndescription: Test skill\n---\n"),
         )
         .expect("write SKILL.md");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn skill_group_toggle_autosaves_only_the_current_group() {
+        let temp = tempdir().unwrap();
+        let _home = TestHomeGuard::set(temp.path());
+        let _location = StorageLocationGuard::set(SkillStorageLocation::CcSwitch);
+        let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+        let db = Arc::new(Database::memory().unwrap());
+        let skill = poisoned_skill("local:group-test", "group-test");
+        write_skill(
+            &SkillService::get_ssot_dir().unwrap().join(&skill.directory),
+            "group-test",
+        );
+        db.save_skill(&skill).unwrap();
+        SkillService::toggle_app(&db, &skill.id, &AppType::Codex, true).unwrap();
+        for id in ["a", "b"] {
+            db.save_skill_group(&crate::database::SkillGroup {
+                id: id.into(),
+                name: id.into(),
+                skills: serde_json::json!([skill.id, "missing-skill"]).to_string(),
+                sort_order: None,
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+        }
+        db.set_setting("current_skill_group_id_codex", "b").unwrap();
+        SkillService::toggle_app(&db, &skill.id, &AppType::Codex, false).unwrap();
+        assert_eq!(
+            db.get_setting("current_skill_group_id_codex")
+                .unwrap()
+                .as_deref(),
+            Some("b")
+        );
+        assert_eq!(
+            crate::services::skill_group::decode_ids(
+                &db.get_skill_group("b").unwrap().unwrap().skills
+            )
+            .unwrap(),
+            vec!["missing-skill"]
+        );
+        assert!(crate::services::skill_group::decode_ids(
+            &db.get_skill_group("a").unwrap().unwrap().skills
+        )
+        .unwrap()
+        .contains(&skill.id));
+        assert!(
+            !db.get_installed_skill(&skill.id)
+                .unwrap()
+                .unwrap()
+                .apps
+                .codex
+        );
+        SkillService::toggle_app(&db, &skill.id, &AppType::Codex, true).unwrap();
+        assert!(crate::services::skill_group::decode_ids(
+            &db.get_skill_group("b").unwrap().unwrap().skills
+        )
+        .unwrap()
+        .contains(&skill.id));
+        db.set_setting("current_skill_group_id_claude", "a")
+            .unwrap();
+        SkillService::toggle_app(&db, &skill.id, &AppType::Claude, false).unwrap();
+        assert!(crate::services::skill_group::decode_ids(
+            &db.get_skill_group("b").unwrap().unwrap().skills
+        )
+        .unwrap()
+        .contains(&skill.id));
+        assert!(!crate::services::skill_group::decode_ids(
+            &db.get_skill_group("a").unwrap().unwrap().skills
+        )
+        .unwrap()
+        .contains(&skill.id));
+
+        let mut corrupt = db.get_skill_group("b").unwrap().unwrap();
+        corrupt.skills = "invalid-json".into();
+        db.save_skill_group(&corrupt).unwrap();
+        assert!(SkillService::toggle_app(&db, &skill.id, &AppType::Codex, false).is_err());
+        assert!(
+            db.get_installed_skill(&skill.id)
+                .unwrap()
+                .unwrap()
+                .apps
+                .codex
+        );
+        assert!(SkillService::get_app_skills_dir(&AppType::Codex)
+            .unwrap()
+            .join(&skill.directory)
+            .join("SKILL.md")
+            .exists());
+        assert_eq!(
+            db.get_skill_group("b").unwrap().unwrap().skills,
+            "invalid-json"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn skill_group_switch_does_not_overwrite_the_group_being_left() {
+        let temp = tempdir().unwrap();
+        let _home = TestHomeGuard::set(temp.path());
+        let _location = StorageLocationGuard::set(SkillStorageLocation::CcSwitch);
+        let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
+        let db = Arc::new(Database::memory().unwrap());
+        let skill = poisoned_skill("local:group-test", "group-test");
+        write_skill(
+            &SkillService::get_ssot_dir().unwrap().join(&skill.directory),
+            "group-test",
+        );
+        db.save_skill(&skill).unwrap();
+        for id in ["a", "b"] {
+            db.save_skill_group(&crate::database::SkillGroup {
+                id: id.into(),
+                name: id.into(),
+                skills: serde_json::json!([skill.id]).to_string(),
+                sort_order: None,
+                created_at: None,
+                updated_at: None,
+            })
+            .unwrap();
+        }
+        let state = crate::store::AppState::new(db.clone());
+        use crate::services::skill_group::SkillGroupService;
+        SkillGroupService::apply(&state, "a", &AppType::Codex).unwrap();
+        SkillGroupService::apply(&state, "b", &AppType::Codex).unwrap();
+        assert_eq!(
+            db.get_setting("current_skill_group_id_codex")
+                .unwrap()
+                .as_deref(),
+            Some("b")
+        );
+        SkillService::toggle_app(&db, &skill.id, &AppType::Codex, false).unwrap();
+        SkillGroupService::apply(&state, "a", &AppType::Codex).unwrap();
+        assert_eq!(db.get_skill_group("b").unwrap().unwrap().skills, "[]");
+
+        assert!(
+            db.get_installed_skill(&skill.id)
+                .unwrap()
+                .unwrap()
+                .apps
+                .codex
+        );
+        SkillGroupService::apply(&state, "b", &AppType::Codex).unwrap();
+        assert!(
+            !db.get_installed_skill(&skill.id)
+                .unwrap()
+                .unwrap()
+                .apps
+                .codex
+        );
+        crate::services::profile::ProfileService::apply_skill_slot(
+            &state,
+            &AppType::Codex,
+            std::slice::from_ref(&skill.id),
+            &mut vec![],
+        )
+        .unwrap();
+        assert_eq!(
+            db.get_setting("current_skill_group_id_codex").unwrap(),
+            None
+        );
+        assert_eq!(db.get_skill_group("b").unwrap().unwrap().skills, "[]");
+
+        let unavailable = poisoned_skill("local:missing-source", "missing-source");
+        db.save_skill(&unavailable).unwrap();
+        db.save_skill_group(&crate::database::SkillGroup {
+            id: "c".into(),
+            name: "C".into(),
+            skills: serde_json::json!([unavailable.id]).to_string(),
+            sort_order: None,
+            created_at: None,
+            updated_at: None,
+        })
+        .unwrap();
+        let warnings = SkillGroupService::apply(&state, "c", &AppType::Codex).unwrap();
+        assert!(!warnings.is_empty());
+        assert_eq!(
+            db.get_setting("current_skill_group_id_codex").unwrap(),
+            None
+        );
+        assert!(
+            !db.get_installed_skill(&unavailable.id)
+                .unwrap()
+                .unwrap()
+                .apps
+                .codex
+        );
+        assert_eq!(db.get_skill_group("b").unwrap().unwrap().skills, "[]");
     }
 
     #[test]

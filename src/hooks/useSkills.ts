@@ -194,6 +194,7 @@ export function useRestoreSkillBackup() {
 export function useToggleSkillApp() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["skills", "write"],
     mutationFn: ({
       id,
       app,
@@ -203,8 +204,11 @@ export function useToggleSkillApp() {
       app: AppId;
       enabled: boolean;
     }) => skillsApi.toggleApp(id, app, enabled),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["skills", "installed"] }),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["skills", "installed"] }),
+        queryClient.invalidateQueries({ queryKey: ["skillGroups"] }),
+      ]),
   });
 }
 
@@ -212,6 +216,7 @@ export function useToggleSkillApp() {
 export function useBulkToggleSkillApp() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["skills", "write"],
     mutationFn: ({
       ids,
       app,
@@ -225,7 +230,10 @@ export function useBulkToggleSkillApp() {
         skillsApi.toggleApp(id, app, enabled),
       ),
     onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: ["skills", "installed"] }),
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["skills", "installed"] }),
+        queryClient.invalidateQueries({ queryKey: ["skillGroups"] }),
+      ]),
   });
 }
 

@@ -116,6 +116,7 @@ export const useApplyProfileMutation = () => {
   const { t } = useTranslation();
 
   return useMutation({
+    mutationKey: ["skills", "write"],
     mutationFn: ({ id, scope }: { id: string; scope: ProfileScope }) =>
       profilesApi.apply(id, scope),
     onSuccess: async (warnings) => {
@@ -149,5 +150,7 @@ export const useApplyProfileMutation = () => {
         closeButton: true,
       });
     },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["skillGroups"] }),
   });
 };

@@ -455,10 +455,23 @@ impl ProfileService {
         target_ids: &[String],
         warnings: &mut Vec<String>,
     ) -> Result<(), AppError> {
+        let _guard = crate::services::skill::skill_state_write_guard();
+        Self::apply_skill_slot_locked(state, app, target_ids, warnings, None)
+    }
+
+    /// The caller holds the Skills write lock; snapshot application must not autosave into the previous group.
+    pub(crate) fn apply_skill_slot_locked(
+        state: &AppState,
+        app: &AppType,
+        target_ids: &[String],
+        warnings: &mut Vec<String>,
+        group_id: Option<&str>,
+    ) -> Result<(), AppError> {
         let app_str = app.as_str();
-        let skills = state.db.get_all_installed_skills()?;
+        let skills = SkillService::get_all_installed(&state.db)
+            .map_err(|e| AppError::Config(e.to_string()))?;
         let current: Vec<(String, bool)> = skills
-            .values()
+            .iter()
             .map(|s| (s.id.clone(), s.apps.is_enabled_for(app)))
             .collect();
         let (toggles, dangling) = plan_toggles(&current, target_ids);
@@ -467,12 +480,18 @@ impl ProfileService {
                 "[{app_str}] skill '{id}' no longer exists, skipped"
             ));
         }
+        state.db.set_current_skill_group_id(app_str, None)?;
+        let mut failed = false;
         for (id, enabled) in toggles {
-            if let Err(e) = SkillService::toggle_app(&state.db, &id, app, enabled) {
+            if let Err(e) = SkillService::toggle_app_locked(&state.db, &id, app, enabled) {
+                failed = true;
                 warnings.push(format!(
                     "[{app_str}] toggle skill '{id}' -> {enabled} failed: {e}"
                 ));
             }
+        }
+        if !failed {
+            state.db.set_current_skill_group_id(app_str, group_id)?;
         }
         Ok(())
     }
