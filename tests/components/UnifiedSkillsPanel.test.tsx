@@ -10,8 +10,11 @@ import type {
   InstalledSkill,
   SkillBackupEntry,
   SkillUpdateInfo,
+  SkillUsageRange,
+  SkillUsageSnapshot,
 } from "@/lib/api/skills";
 import type { VisibleApps } from "@/types";
+import { settleSkillUsage, type SkillUsageData } from "@/lib/skillUsage";
 
 const selectedVisibleApps: VisibleApps = {
   claude: true,
@@ -64,6 +67,8 @@ const { toastErrorMock, toastSuccessMock, toastWarningMock } = vi.hoisted(
 let installedSkillsMock: InstalledSkill[] = [];
 let skillBackupsMock: SkillBackupEntry[] = [];
 let skillUpdatesMock: SkillUpdateInfo[] = [];
+let usageDataMock: Record<SkillUsageRange, SkillUsageSnapshot>;
+let settledUsageDataMock: SkillUsageData | undefined;
 let checkUpdatesFetching = false;
 let toggleSkillAppPending = false;
 let toggleSkillAppVariables:
@@ -84,6 +89,25 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/hooks/useSkills", () => ({
+  useSkillUsage: () => {
+    settledUsageDataMock = settleSkillUsage(settledUsageDataMock, {
+      ...usageDataMock,
+    });
+    return {
+      data: settledUsageDataMock,
+      boundaries: {
+        day: Array.from(
+          { length: 13 },
+          (_, index) => 1792108800 + index * 7200,
+        ),
+        week: Array.from(
+          { length: 8 },
+          (_, index) => 1792108800 + index * 86400,
+        ),
+      },
+      isError: false,
+    };
+  },
   useInstalledSkills: () => ({
     data: installedSkillsMock,
     isLoading: false,
@@ -181,10 +205,279 @@ const makeInstalledSkill = (
   };
 };
 
+const appCountControl = (app: string) =>
+  screen
+    .getAllByRole("checkbox")
+    .find((element) => element.textContent?.startsWith(`${app}:`))!;
+
 const renderPanel = () =>
   render(<UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />);
 
+const usageRecord = (skillName: string, count: number, length = 12) => ({
+  skillName,
+  app: "codex" as const,
+  count,
+  sessions: 1,
+  lastUsed: 1792112400,
+  manualCount: 0,
+  agentCount: count,
+  buckets: Array.from({ length }, (_, index) => (index === 0 ? count : 0)),
+});
+
 describe("UnifiedSkillsPanel", () => {
+  it("keeps scan failures visible and retains the last completed usage", () => {
+    installedSkillsMock = [makeInstalledSkill()];
+    usageDataMock.day.records = [usageRecord("alpha-skill", 3)];
+    const view = renderPanel();
+    usageDataMock.day = {
+      ...usageDataMock.day,
+      completed: false,
+      error: "Unable to read session log",
+    };
+    view.rerender(
+      <UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "skills.usage.incomplete",
+    );
+    expect(screen.getByTestId("skill-usage-trend")).toHaveTextContent("3");
+  });
+
+  it("includes hidden agents in the skill total and stacked trend", () => {
+    installedSkillsMock = [makeInstalledSkill()];
+    usageDataMock.day.records = [usageRecord("alpha-skill", 3)];
+    render(
+      <UnifiedSkillsPanel
+        currentApp="claude"
+        onOpenDiscovery={() => {}}
+        visibleApps={{ ...selectedVisibleApps, codex: false }}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Codex" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("skill-usage-trend")).toHaveTextContent("3");
+    expect(document.querySelector('[data-usage-segment="codex"]')).toHaveClass(
+      "bg-blue-500",
+    );
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.today/ }),
+    ).toHaveTextContent("3");
+  });
+
+  it("sorts by the selected period's total, keeps ties alphabetical and freezes order during scans", async () => {
+    installedSkillsMock = ["Zeta", "beta", "Alpha", "Gamma"].map((name) =>
+      makeInstalledSkill({ id: name, name, directory: name.toLowerCase() }),
+    );
+    usageDataMock.day.records = [
+      usageRecord("alpha", 1),
+      usageRecord("beta", 3),
+      usageRecord("zeta", 3),
+    ];
+    usageDataMock.week.records = [
+      usageRecord("alpha", 8, 7),
+      usageRecord("beta", 3, 7),
+      usageRecord("zeta", 1, 7),
+    ];
+    const view = renderPanel();
+    const user = userEvent.setup();
+    const names = () =>
+      screen
+        .getAllByText(/^(Alpha|beta|Gamma|Zeta)$/)
+        .map((element) => element.textContent);
+    expect(names()).toEqual(["Alpha", "beta", "Gamma", "Zeta"]);
+    await user.click(
+      screen.getByRole("combobox", { name: "skills.usage.sort" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "skills.usage.sortUsage" }),
+    );
+    expect(names()).toEqual(["beta", "Zeta", "Alpha", "Gamma"]);
+
+    const betaRow = screen.getByText("beta").closest(".group")!;
+    await user.hover(
+      within(betaRow as HTMLElement).getByRole("button", { name: "Claude" }),
+    );
+    expect(names()).toEqual(["beta", "Zeta", "Alpha", "Gamma"]);
+    await user.unhover(
+      within(betaRow as HTMLElement).getByRole("button", { name: "Claude" }),
+    );
+
+    usageDataMock.day = {
+      ...usageDataMock.day,
+      scanning: true,
+      completed: false,
+      records: [usageRecord("alpha", 100)],
+    };
+    view.rerender(
+      <UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />,
+    );
+    expect(names()).toEqual(["beta", "Zeta", "Alpha", "Gamma"]);
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.today/ }),
+    ).toHaveTextContent("7");
+    expect(
+      screen.queryByText("skills.usage.unusedToday"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "skills.usage.unusedToday" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("skills.usage.scanning")).not.toBeInTheDocument();
+
+    usageDataMock.day = {
+      ...usageDataMock.day,
+      scanning: false,
+      completed: true,
+    };
+    view.rerender(
+      <UnifiedSkillsPanel onOpenDiscovery={() => {}} currentApp="claude" />,
+    );
+    expect(names()).toEqual(["Alpha", "beta", "Gamma", "Zeta"]);
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.today/ }),
+    ).toHaveTextContent("100");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("skills.usage.updated")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /skills\.usage\.week/ }),
+    );
+    expect(names()).toEqual(["Alpha", "beta", "Zeta", "Gamma"]);
+    await user.type(
+      screen.getByRole("textbox", { name: "skills.installedSearchAriaLabel" }),
+      "gamma",
+    );
+    expect(names()).toEqual(["Gamma"]);
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.week/ }),
+    ).toHaveTextContent("0");
+  });
+
+  it("defaults to today, filters one row on hover, and changes badges and buckets with the range", async () => {
+    installedSkillsMock = [
+      makeInstalledSkill({ apps: { claude: true, codex: false } }),
+    ];
+    const record = (
+      app: "claude" | "codex",
+      count: number,
+      length: number,
+    ) => ({
+      skillName: "alpha-skill",
+      app,
+      count,
+      sessions: 1,
+      lastUsed: 1792112400,
+      manualCount: 0,
+      agentCount: count,
+      buckets: Array.from({ length }, (_, index) => (index === 0 ? count : 0)),
+    });
+    usageDataMock.day!.records = [
+      record("claude", 2, 12),
+      record("codex", 3, 12),
+    ];
+    usageDataMock.week!.records = [
+      record("claude", 4, 7),
+      record("codex", 7, 7),
+    ];
+    render(
+      <UnifiedSkillsPanel
+        currentApp="claude"
+        onOpenDiscovery={() => {}}
+        visibleApps={selectedVisibleApps}
+      />,
+    );
+    const user = userEvent.setup();
+    const trend = screen.getByTestId("skill-usage-trend");
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.today/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(trend.querySelectorAll("[data-usage-bucket]")).toHaveLength(12);
+    expect(trend.querySelector('[data-usage-segment="claude"]')).toHaveClass(
+      "bg-orange-500",
+    );
+    expect(trend.querySelector('[data-usage-segment="codex"]')).toHaveClass(
+      "bg-blue-500",
+    );
+    expect(trend.querySelector('[data-usage-segment="claude"]')).toHaveStyle({
+      height: "40%",
+    });
+    expect(trend.querySelector('[data-usage-segment="codex"]')).toHaveStyle({
+      height: "60%",
+    });
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.today/ }),
+    ).toHaveTextContent("5");
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.week/ }),
+    ).toHaveTextContent("11");
+    expect(trend).toHaveTextContent("5");
+    expect(
+      document.querySelector('[data-usage-app="codex"]'),
+    ).toHaveTextContent("3");
+    expect(document.querySelector('[data-usage-app="codex"]')).toHaveAttribute(
+      "data-usage-warning",
+      "true",
+    );
+    expect(document.querySelector('[data-usage-app="codex"]')).toHaveClass(
+      "bg-zinc-200",
+      "text-zinc-700",
+    );
+    expect(document.querySelector('[data-usage-app="claude"]')).toHaveClass(
+      "bg-black",
+      "text-white",
+    );
+
+    const codex = screen.getByRole("button", { name: "Codex" });
+    await user.hover(codex);
+    expect(trend).toHaveTextContent("3");
+    expect(codex).toHaveClass("ring-2");
+    await user.unhover(codex);
+    expect(trend).toHaveTextContent("5");
+
+    await user.click(
+      screen.getByRole("button", { name: /skills\.usage\.week/ }),
+    );
+    expect(trend.querySelectorAll("[data-usage-bucket]")).toHaveLength(7);
+    expect(trend).toHaveTextContent("11");
+    expect(
+      document.querySelector('[data-usage-app="codex"]'),
+    ).toHaveTextContent("7");
+
+    await user.hover(screen.getByRole("button", { name: "Hermes" }));
+    expect(trend).toHaveTextContent("skills.usage.unsupported");
+    expect(trend.querySelectorAll("[data-usage-bucket]")).toHaveLength(0);
+    await user.click(codex);
+    await waitFor(() =>
+      expect(toggleSkillAppMock).toHaveBeenCalledWith({
+        id: "owner/repo:alpha-skill",
+        app: "codex",
+        enabled: true,
+      }),
+    );
+  });
+
+  it("does not label a skill unused while the first background scan is unfinished", () => {
+    installedSkillsMock = [makeInstalledSkill()];
+    usageDataMock.day = {
+      scanning: true,
+      completed: false,
+      filesScanned: 1,
+      filesTotal: 10,
+      error: null,
+      records: [],
+    };
+    renderPanel();
+    expect(screen.getByTestId("skill-usage-placeholder")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("skills.usage.scanning")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("skills.usage.unusedToday"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "skills.filter.repo" }),
+    ).toHaveTextContent("skills.usage.allSources");
+  });
+
   it("opens the selected Skill document and blocks management until it closes", async () => {
     installedSkillsMock = [makeInstalledSkill()];
     const user = userEvent.setup();
@@ -208,6 +501,16 @@ describe("UnifiedSkillsPanel", () => {
     installedSkillsMock = [];
     skillBackupsMock = [];
     skillUpdatesMock = [];
+    const snapshot = {
+      scanning: false,
+      completed: true,
+      filesScanned: 1,
+      filesTotal: 1,
+      error: null,
+      records: [],
+    };
+    usageDataMock = { day: { ...snapshot }, week: { ...snapshot } };
+    settledUsageDataMock = undefined;
     checkUpdatesFetching = false;
     toggleSkillAppPending = false;
     toggleSkillAppVariables = undefined;
@@ -266,9 +569,9 @@ describe("UnifiedSkillsPanel", () => {
     );
     expect(screen.getByText("Alpha Skill")).toBeInTheDocument();
     expect(screen.getByText("Beta Skill")).toBeInTheDocument();
-    expect(screen.getByText("Claude:")).toBeInTheDocument();
-    expect(screen.getByText("Codex:")).toBeInTheDocument();
-    expect(screen.getByText("Hermes:")).toBeInTheDocument();
+    expect(appCountControl("Claude")).toBeInTheDocument();
+    expect(appCountControl("Codex")).toBeInTheDocument();
+    expect(appCountControl("Hermes")).toBeInTheDocument();
     expect(screen.queryByText("Gemini:")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Gemini" }),
@@ -277,7 +580,7 @@ describe("UnifiedSkillsPanel", () => {
     rerender(
       <UnifiedSkillsPanel currentApp="claude" onOpenDiscovery={vi.fn()} />,
     );
-    expect(screen.getByText("Gemini:")).toBeInTheDocument();
+    expect(appCountControl("Gemini")).toBeInTheDocument();
     screen
       .getAllByRole("button", { name: "Gemini" })
       .forEach((button) =>
@@ -605,8 +908,10 @@ describe("UnifiedSkillsPanel", () => {
       }),
       "Visible Skill",
     );
-    expect(screen.getByText("skills.installedFiltered")).toBeInTheDocument();
-    await user.click(screen.getByText("Claude:").closest("button")!);
+    expect(
+      screen.getByRole("combobox", { name: "skills.filter.repo" }),
+    ).toHaveTextContent("skills.usage.allSources");
+    await user.click(appCountControl("Claude"));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -649,13 +954,13 @@ describe("UnifiedSkillsPanel", () => {
     expect(
       screen.getAllByRole("option").map((option) => option.textContent),
     ).toEqual([
-      "skills.filter.all",
-      "skills.local",
-      "other/pack",
-      "owner/repo",
-      "Zed/pack",
+      "skills.usage.allSources",
+      "skills.local（1）",
+      "other/pack（1）",
+      "owner/repo（1）",
+      "Zed/pack（1）",
     ]);
-    await user.click(screen.getByRole("option", { name: "skills.local" }));
+    await user.click(screen.getByRole("option", { name: "skills.local（1）" }));
 
     expect(screen.getByText("Local Skill")).toBeInTheDocument();
     expect(screen.queryByText("Repo A Skill")).not.toBeInTheDocument();
@@ -663,11 +968,11 @@ describe("UnifiedSkillsPanel", () => {
     await user.click(
       screen.getByRole("combobox", { name: "skills.filter.repo" }),
     );
-    await user.click(screen.getByRole("option", { name: "other/pack" }));
+    await user.click(screen.getByRole("option", { name: "other/pack（1）" }));
 
     expect(screen.getByText("Repo B Skill")).toBeInTheDocument();
     expect(screen.queryByText("Local Skill")).not.toBeInTheDocument();
-    await user.click(screen.getByText("Claude:").closest("button")!);
+    await user.click(appCountControl("Claude"));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -686,7 +991,7 @@ describe("UnifiedSkillsPanel", () => {
     renderPanel();
 
     const user = userEvent.setup();
-    await user.click(screen.getByText("Claude:").closest("button")!);
+    await user.click(appCountControl("Claude"));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -705,7 +1010,7 @@ describe("UnifiedSkillsPanel", () => {
     renderPanel();
 
     const user = userEvent.setup();
-    await user.click(screen.getByText("Claude:").closest("button")!);
+    await user.click(appCountControl("Claude"));
 
     await waitFor(() => {
       expect(bulkToggleSkillAppMock).toHaveBeenCalledWith({
@@ -728,7 +1033,7 @@ describe("UnifiedSkillsPanel", () => {
     renderPanel();
 
     const user = userEvent.setup();
-    await user.click(screen.getByText("Claude:").closest("button")!);
+    await user.click(appCountControl("Claude"));
 
     await waitFor(() => {
       expect(toastErrorMock).toHaveBeenCalledWith("common.bulkToggleFailed", {
@@ -760,8 +1065,8 @@ describe("UnifiedSkillsPanel", () => {
 
       const row = screen.getByText("Alpha Skill").closest(".group");
       const appToggleButtons = Array.from(
-        row!.querySelectorAll<HTMLButtonElement>("button"),
-      ).slice(0, 7);
+        row!.querySelectorAll<HTMLButtonElement>("button[aria-pressed]"),
+      );
 
       expect(appToggleButtons).toHaveLength(7);
       appToggleButtons.forEach((button) => expect(button).toBeDisabled());
@@ -877,7 +1182,7 @@ describe("UnifiedSkillsPanel", () => {
       expect(onInteractionBlockedChange).toHaveBeenLastCalledWith(true);
       expect(onNavigationBlockedChange).toHaveBeenLastCalledWith(false);
     });
-    expect(screen.getByText("Claude:").closest("button")).toBeDisabled();
+    expect(appCountControl("Claude")).toBeDisabled();
     expect(screen.getByTitle("skills.uninstall")).toBeDisabled();
 
     await act(async () => {
@@ -943,9 +1248,7 @@ describe("UnifiedSkillsPanel", () => {
       await ref.current?.openImport();
     });
     await userEvent.setup().click(screen.getByTitle("skills.uninstall"));
-    await userEvent
-      .setup()
-      .click(screen.getByText("Claude:").closest("button")!);
+    await userEvent.setup().click(appCountControl("Claude"));
 
     expect(scanUnmanagedMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

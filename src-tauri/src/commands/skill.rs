@@ -20,6 +20,20 @@ use tauri::State;
 /// SkillService 状态包装
 pub struct SkillServiceState(pub Arc<SkillService>);
 
+#[tauri::command]
+pub async fn get_skill_usage(
+    boundaries: Vec<i64>,
+    app_state: State<'_, AppState>,
+) -> Result<crate::services::skill_usage::SkillUsageSnapshot, String> {
+    let db = app_state.db.clone();
+    crate::services::skill_usage::request_scan(db.clone())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::skill_usage::get_usage(&db, &boundaries)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 解析 app 参数为 AppType
 fn parse_app_type(app: &str) -> Result<AppType, String> {
     AppType::from_str(app).map_err(|e| e.to_string())

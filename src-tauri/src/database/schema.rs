@@ -338,6 +338,8 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        Self::create_skill_usage_tables(conn)?;
+
         // 19. Profiles 表（全应用共享的项目实体，payload 按 app 分槽快照
         //     供应商/MCP/Skills/Prompt；各应用分组的 current 标记在 settings 表）
         conn.execute(
@@ -579,6 +581,10 @@ impl Database {
                         }
                         Self::set_user_version(conn, 19)?;
                     }
+                    19 => {
+                        Self::create_skill_usage_tables(conn)?;
+                        Self::set_user_version(conn, 20)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
@@ -602,6 +608,32 @@ impl Database {
                 Err(e)
             }
         }
+    }
+
+    fn create_skill_usage_tables(conn: &Connection) -> Result<(), AppError> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS skill_usage_events (
+                event_id TEXT PRIMARY KEY,
+                dedup_key TEXT NOT NULL UNIQUE,
+                skill_name TEXT NOT NULL,
+                app TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL,
+                used_at INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                evidence TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_skill_usage_time ON skill_usage_events(used_at);
+            CREATE TABLE IF NOT EXISTS skill_usage_sync (
+                file_path TEXT PRIMARY KEY,
+                last_modified INTEGER NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_byte_offset INTEGER NOT NULL,
+                last_tail_fingerprint TEXT NOT NULL,
+                context TEXT NOT NULL
+            );",
+        )
+        .map_err(|e| AppError::Database(e.to_string()))
     }
 
     /// v0 -> v1 迁移：补齐所有缺失列

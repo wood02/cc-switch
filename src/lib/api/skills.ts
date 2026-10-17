@@ -119,6 +119,28 @@ export interface SkillUpdateInfo {
   remoteHash: string;
 }
 
+export type SkillUsageRange = "day" | "week";
+
+export interface SkillUsageSummary {
+  skillName: string;
+  app: AppId;
+  count: number;
+  sessions: number;
+  lastUsed: number;
+  manualCount: number;
+  agentCount: number;
+  buckets: number[];
+}
+
+export interface SkillUsageSnapshot {
+  scanning: boolean;
+  completed: boolean;
+  filesScanned: number;
+  filesTotal: number;
+  error: string | null;
+  records: SkillUsageSummary[];
+}
+
 /** 存储位置迁移结果 */
 export interface MigrationResult {
   migratedCount: number;
@@ -164,6 +186,9 @@ export interface SkillRepo {
 // ========== API ==========
 
 export const skillsApi = {
+  async getUsage(boundaries: number[]): Promise<SkillUsageSnapshot> {
+    return await invoke("get_skill_usage", { boundaries });
+  },
   async readDocument(id: string): Promise<SkillDocument> {
     return await invoke("read_skill_document", { id });
   },

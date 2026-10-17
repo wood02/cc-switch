@@ -20,6 +20,36 @@ import type { AppId } from "@/lib/api/types";
 import { mergeImportedSkills } from "@/hooks/useSkills.helpers";
 import { runSequentialBulkAction } from "@/lib/utils/sequentialBulkAction";
 import { parseBestSkills, type BestSkillsRanking } from "@/lib/bestSkills";
+import {
+  settleSkillUsage,
+  skillUsageBoundaries,
+  type SkillUsageData,
+} from "@/lib/skillUsage";
+
+export function useSkillUsage() {
+  const queryClient = useQueryClient();
+  const boundaries = {
+    day: skillUsageBoundaries("day"),
+    week: skillUsageBoundaries("week"),
+  };
+  const queryKey = ["skills", "usage", boundaries];
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const [day, week] = await Promise.all([
+        skillsApi.getUsage(boundaries.day),
+        skillsApi.getUsage(boundaries.week),
+      ]);
+      return settleSkillUsage(
+        queryClient.getQueryData<SkillUsageData>(queryKey),
+        { day, week },
+      );
+    },
+    refetchInterval: (query) =>
+      query.state.data?.status.scanning ? 1500 : 30_000,
+  });
+  return { ...query, boundaries };
+}
 
 /**
  * 查询所有已安装的 Skills

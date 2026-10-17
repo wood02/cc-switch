@@ -26,6 +26,7 @@ pub mod session_usage_opencode;
 pub mod session_usage_pi;
 pub mod skill;
 pub mod skill_group;
+pub mod skill_usage;
 pub mod speedtest;
 pub mod sql_helpers;
 pub mod stream_check;
