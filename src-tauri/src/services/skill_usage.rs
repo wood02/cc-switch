@@ -137,8 +137,6 @@ struct Context {
     session: String,
     turn: String,
     fork_at: Option<i64>,
-    #[serde(default)]
-    malformed: bool,
 }
 
 #[derive(Debug)]
@@ -507,13 +505,7 @@ fn sync_file(db: &Database, app: &str, path: &Path) -> Result<(), String> {
     if let Some((last_modified, size, position, tail, stored_context)) = cursor {
         if position <= metadata.len() && fingerprint(&mut file, position)? == tail {
             if modified == last_modified && size == metadata.len() {
-                let previous: Context =
-                    serde_json::from_str(&stored_context).map_err(|e| e.to_string())?;
-                return if position == size && !previous.malformed {
-                    Ok(())
-                } else {
-                    Err("incomplete or malformed record".to_string())
-                };
+                return Ok(());
             }
             offset = position;
             context = serde_json::from_str(&stored_context).map_err(|e| e.to_string())?;
@@ -524,7 +516,6 @@ fn sync_file(db: &Database, app: &str, path: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let mut reader = BufReader::new(file);
     let mut events = Vec::new();
-    let mut partial = false;
     loop {
         let mut bytes = Vec::new();
         let read = reader
@@ -533,15 +524,19 @@ fn sync_file(db: &Database, app: &str, path: &Path) -> Result<(), String> {
         if read == 0 {
             break;
         }
+        // An unterminated tail may still be written; the cursor stays before it until the file grows.
         if bytes.last() != Some(&b'\n') {
-            partial = true;
             break;
         }
         let id = format!("{:x}", Sha256::digest(&bytes));
         match serde_json::from_slice::<Value>(&bytes) {
             Ok(row) => events.extend(parse_line(&row, app, &mut context, &id)),
             Err(_) if bytes.iter().all(u8::is_ascii_whitespace) => {}
-            Err(_) => context.malformed = true,
+            // A corrupt line costs only itself; it must not keep the whole scan from completing.
+            Err(error) => log::warn!(
+                "[SKILL-USAGE] {}: skipped malformed line at byte {offset}: {error}",
+                path.display()
+            ),
         }
         offset += read as u64;
     }
@@ -571,12 +566,7 @@ fn sync_file(db: &Database, app: &str, path: &Path) -> Result<(), String> {
         ],
     )
     .map_err(|e| e.to_string())?;
-    tx.commit().map_err(|e| e.to_string())?;
-    if partial || context.malformed {
-        Err("incomplete or malformed record; retrying on next scan".to_string())
-    } else {
-        Ok(())
-    }
+    tx.commit().map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -928,8 +918,18 @@ mod tests {
         let text = row.to_string();
         let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
         write!(file, "{}", &text[..text.len() / 2]).unwrap();
-        assert!(sync_file(&db, "codex", &path).is_err());
-        assert!(sync_file(&db, "codex", &path).is_err());
+        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path).unwrap();
+        let count = |db: &Database| {
+            db.conn
+                .lock()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM skill_usage_events", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .unwrap()
+        };
+        assert_eq!(count(&db), 0);
         writeln!(file, "{}", &text[text.len() / 2..]).unwrap();
         sync_file(&db, "codex", &path).unwrap();
         let archived = dir.path().join("archived.jsonl");
@@ -955,6 +955,26 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn malformed_lines_are_skipped_without_failing_the_file() {
+        let (db, _dir, path) = setup();
+        let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        writeln!(file, "{{not json").unwrap();
+        append(
+            &path,
+            &[command(
+                "read-1",
+                "turn-1",
+                "cat /skills/archify/SKILL.md",
+                0,
+            )],
+        );
+        sync_file(&db, "codex", &path).unwrap();
+        sync_file(&db, "codex", &path).unwrap();
+        let snapshot = get_usage(&db, &[1792108800, 1792195200]).unwrap();
+        assert_eq!(snapshot.records[0].count, 1);
     }
 
     #[test]
