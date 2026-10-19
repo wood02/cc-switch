@@ -137,7 +137,6 @@ struct Context {
     session: String,
     turn: String,
     fork_at: Option<i64>,
-    manual: HashSet<String>,
     #[serde(default)]
     malformed: bool,
 }
@@ -201,9 +200,8 @@ fn event(
     evidence: &'static str,
 ) -> Event {
     let id = format!("{app}:{id}:{skill}");
-    let dedup = if !context.turn.is_empty()
-        && (app == "codex" || manual || context.manual.contains(&skill))
-    {
+    // One use per skill per user turn: repeated loads within a turn are chunked reads or reloads.
+    let dedup = if !context.turn.is_empty() {
         format!("{app}:{}:{}:{skill}", context.session, context.turn)
     } else {
         id.clone()
@@ -260,10 +258,11 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
         let role = message["role"].as_str().or_else(|| row["type"].as_str());
         if role == Some("user") {
             let text = content_text(content);
-            // Tool results are user-role messages too; they do not start a new user turn.
-            if !text.is_empty() {
+            if let Some(prompt) = row["promptId"].as_str() {
+                context.turn = prompt.to_string();
+            } else if !text.is_empty() {
+                // Older logs lack promptId; tool results carry no text and do not start a turn.
                 context.turn = row["uuid"].as_str().unwrap_or(fallback_id).to_string();
-                context.manual.clear();
             }
             if text.trim_start().starts_with("<command-") {
                 static COMMAND: OnceLock<Regex> = OnceLock::new();
@@ -271,7 +270,6 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                     Regex::new(r"<command-name>/([^<\s]+)</command-name>").unwrap()
                 });
                 if let Some(skill) = re.captures(&text).and_then(|c| name(&c[1])) {
-                    context.manual.insert(skill.clone());
                     events.push(event(
                         context,
                         app,
@@ -313,11 +311,7 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
                 .filter(|part| part["type"] == "read")
                 .filter_map(|part| part["path"].as_str().and_then(skill_path))
                 .collect();
-            if skills.is_empty() {
-                if let Some(skill) = read_command_skill(&item["command"]) {
-                    skills.insert(skill);
-                }
-            }
+            skills.extend(read_command_skills(&item["command"]));
             if let Some(turn) = payload["turn_id"].as_str() {
                 context.turn = turn.to_string();
             }
@@ -363,12 +357,22 @@ fn parse_line(row: &Value, app: &str, context: &mut Context, fallback_id: &str) 
     events
 }
 
-// Tokenize only the first simple shell command; never inspect output or execute log content.
-fn shell_words(command: &str) -> Vec<String> {
-    let mut words = Vec::new();
+// Tokenize simple shell commands split at `;`, `|`, `&` and newlines; never inspect output or execute log content.
+fn shell_words(command: &str) -> Vec<Vec<String>> {
+    let mut commands = vec![Vec::new()];
     let mut word = String::new();
     let mut quote = None;
     let mut escaped = false;
+    // A redirection target is written, not read.
+    let mut redirect = false;
+    fn finish(word: &mut String, commands: &mut [Vec<String>], redirect: &mut bool) {
+        if !word.is_empty() {
+            let word = std::mem::take(word);
+            if !std::mem::take(redirect) {
+                commands.last_mut().unwrap().push(word);
+            }
+        }
+    }
     for c in command.chars() {
         if escaped {
             word.push(c);
@@ -387,13 +391,15 @@ fn shell_words(command: &str) -> Vec<String> {
             quote = Some(c);
             continue;
         }
-        if quote.is_none() && ";|&<>\n".contains(c) {
-            break;
-        }
-        if quote.is_none() && c.is_whitespace() {
-            if !word.is_empty() {
-                words.push(std::mem::take(&mut word));
-            }
+        if quote.is_none() && ";|&\n".contains(c) {
+            finish(&mut word, &mut commands, &mut redirect);
+            redirect = false;
+            commands.push(Vec::new());
+        } else if quote.is_none() && "<>".contains(c) {
+            finish(&mut word, &mut commands, &mut redirect);
+            redirect = true;
+        } else if quote.is_none() && c.is_whitespace() {
+            finish(&mut word, &mut commands, &mut redirect);
         } else {
             word.push(c);
         }
@@ -401,46 +407,62 @@ fn shell_words(command: &str) -> Vec<String> {
     if quote.is_some() || escaped {
         return Vec::new();
     }
-    if !word.is_empty() {
-        words.push(word);
-    }
-    words
+    finish(&mut word, &mut commands, &mut redirect);
+    commands.retain(|words| !words.is_empty());
+    commands
 }
 
-fn read_command_skill(command: &Value) -> Option<String> {
-    let mut words: Vec<String> = if let Some(command) = command.as_str() {
+fn read_command_skills(command: &Value) -> HashSet<String> {
+    let commands = if let Some(command) = command.as_str() {
         shell_words(command)
     } else {
-        command
-            .as_array()?
-            .iter()
+        let words = command.as_array().into_iter().flatten();
+        vec![words
             .filter_map(Value::as_str)
             .map(str::to_string)
-            .collect()
+            .collect()]
     };
-    for _ in 0..4 {
-        let program = Path::new(words.first()?).file_name()?.to_str()?;
-        if program == "rtk" {
-            words.remove(0);
-            if words.first().is_some_and(|word| word == "proxy") {
+    commands
+        .into_iter()
+        .flat_map(|words| command_skills(words, 4))
+        .collect()
+}
+
+fn command_skills(mut words: Vec<String>, depth: u8) -> Vec<String> {
+    let program =
+        |words: &[String]| Some(Path::new(words.first()?).file_name()?.to_str()?.to_string());
+    loop {
+        match program(&words).as_deref() {
+            Some("rtk") => {
                 words.remove(0);
+                if words.first().is_some_and(|word| word == "proxy") {
+                    words.remove(0);
+                }
             }
-        } else if matches!(program, "sh" | "bash" | "zsh")
-            && words.get(1).is_some_and(|w| w == "-c" || w == "-lc")
-        {
-            words = shell_words(words.get(2)?);
-        } else {
-            break;
+            Some("sh" | "bash" | "zsh")
+                if depth > 0 && words.get(1).is_some_and(|w| w == "-c" || w == "-lc") =>
+            {
+                let Some(script) = words.get(2) else {
+                    return Vec::new();
+                };
+                return shell_words(script)
+                    .into_iter()
+                    .flat_map(|words| command_skills(words, depth - 1))
+                    .collect();
+            }
+            _ => break,
         }
     }
-    let program = Path::new(words.first()?).file_name()?.to_str()?;
+    let Some(program) = program(&words) else {
+        return Vec::new();
+    };
     if !matches!(
-        program,
+        program.as_str(),
         "cat" | "sed" | "head" | "tail" | "bat" | "rg" | "grep"
     ) {
-        return None;
+        return Vec::new();
     }
-    if matches!(program, "rg" | "grep")
+    if matches!(program.as_str(), "rg" | "grep")
         && words.iter().any(|w| {
             matches!(
                 w.as_str(),
@@ -448,14 +470,15 @@ fn read_command_skill(command: &Value) -> Option<String> {
             )
         })
     {
-        return None;
+        return Vec::new();
     }
-    // The first path must itself target SKILL.md; a later path may be an output or a search example.
+    // Readers take every file operand; only operands that are themselves SKILL.md count.
     words
         .iter()
         .skip(1)
-        .find(|word| !word.starts_with('-') && (word.contains('/') || word.ends_with("SKILL.md")))
-        .and_then(|path| skill_path(path))
+        .filter(|word| !word.starts_with('-'))
+        .filter_map(|path| skill_path(path))
+        .collect()
 }
 
 fn fingerprint(file: &mut File, offset: u64) -> Result<String, String> {
@@ -663,6 +686,30 @@ mod tests {
     use std::io::Write;
 
     #[test]
+    fn migration_merges_claude_history_per_turn_and_rescans() {
+        let db = Database::memory().unwrap();
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch("INSERT INTO skill_usage_events VALUES
+                ('claude:t2:archify','claude:t2:archify','archify','claude','s','t',20,'agent','skill_tool'),
+                ('claude:t1:archify','claude:t1:archify','archify','claude','s','t',10,'agent','skill_tool'),
+                ('codex:x:archify','codex:s:t:archify','archify','codex','s','t',30,'agent','skill_file_read');
+            INSERT INTO skill_usage_sync VALUES ('f',1,1,1,'x','{}');
+            PRAGMA user_version=20;").unwrap();
+        Database::apply_schema_migrations_on_conn(&conn).unwrap();
+        let count = |sql: &str| conn.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
+        assert_eq!(count("SELECT COUNT(*) FROM skill_usage_sync"), 0);
+        assert_eq!(
+            count("SELECT COUNT(*) FROM skill_usage_events WHERE app='codex'"),
+            1
+        );
+        assert_eq!(
+            count("SELECT used_at FROM skill_usage_events WHERE app='claude' AND dedup_key='claude:s:t:archify'"),
+            10
+        );
+        assert_eq!(count("SELECT COUNT(*) FROM skill_usage_events"), 2);
+    }
+
+    #[test]
     fn migration_adds_independent_tables_without_changing_token_cursors() {
         let db = Database::memory().unwrap();
         let conn = db.conn.lock().unwrap();
@@ -674,7 +721,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
                 .unwrap(),
-            20
+            crate::database::SCHEMA_VERSION
         );
         assert_eq!(
             conn.query_row(
@@ -717,23 +764,30 @@ mod tests {
             "rtk proxy sed -n '1,120p' /skills/archify/SKILL.md",
             "rtk proxy sh -c 'cat /skills/archify/SKILL.md'",
             "rtk rg -n diagrams /skills/archify/SKILL.md",
+            "rtk proxy cat /home/RTK.md /skills/archify/SKILL.md",
+            "cat /tmp/example.md; cat /skills/archify/SKILL.md",
+            "sed -n 1p /home/RTK.md && sed -n '1,260p' /skills/archify/SKILL.md 2>&1 | head",
         ] {
             assert_eq!(
-                read_command_skill(&json!(["/bin/zsh", "-lc", command])).as_deref(),
-                Some("archify"),
+                read_command_skills(&json!(["/bin/zsh", "-lc", command])),
+                HashSet::from(["archify".to_string()]),
                 "{command}"
             );
         }
+        assert_eq!(
+            read_command_skills(&json!("cat /s/grill-me/SKILL.md /s/grilling/SKILL.md")).len(),
+            2
+        );
         for command in [
             "echo /skills/archify/SKILL.md",
             "ls /skills/archify/SKILL.md",
             "rg -l foo /skills/archify/SKILL.md",
-            "cat /tmp/example.md /skills/archify/SKILL.md",
             "cat /tmp/example.md > /skills/archify/SKILL.md",
-            "cat /tmp/example.md; cat /skills/archify/SKILL.md",
+            "cat /tmp/example.md >/skills/archify/SKILL.md",
+            "echo '/skills/archify/SKILL.md; cat x'",
         ] {
             assert!(
-                read_command_skill(&json!(["/bin/zsh", "-lc", command])).is_none(),
+                read_command_skills(&json!(["/bin/zsh", "-lc", command])).is_empty(),
                 "{command}"
             );
         }
@@ -776,11 +830,21 @@ mod tests {
             .unwrap();
         assert_eq!(manual.skill, "archify");
         assert_eq!(manual.dedup, automatic.dedup);
-        context.manual.clear();
+        let mut again = tool.clone();
+        again["message"]["content"][0]["id"] = json!("tool-2");
         assert_eq!(
-            parse_line(&tool, "claude", &mut context, "fallback")[0].id,
-            automatic.id
+            parse_line(&again, "claude", &mut context, "fallback")[0].dedup,
+            automatic.dedup
         );
+        let prompt = json!({"type":"user","sessionId":"session","uuid":"user-2","promptId":"prompt-2","timestamp":"2026-10-16T01:02:00Z","message":{"role":"user","content":"again"}});
+        parse_line(&prompt, "claude", &mut context, "fallback");
+        let next = parse_line(&again, "claude", &mut context, "fallback")
+            .pop()
+            .unwrap();
+        assert_ne!(next.dedup, automatic.dedup);
+        let result = json!({"type":"user","sessionId":"session","uuid":"user-3","promptId":"prompt-2","timestamp":"2026-10-16T01:03:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-2","content":"ok"}]}});
+        parse_line(&result, "claude", &mut context, "fallback");
+        assert_eq!(context.turn, "prompt-2");
     }
 
     fn append(path: &Path, rows: &[Value]) {

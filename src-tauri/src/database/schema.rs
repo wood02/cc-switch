@@ -585,6 +585,22 @@ impl Database {
                         Self::create_skill_usage_tables(conn)?;
                         Self::set_user_version(conn, 20)?;
                     }
+                    20 => {
+                        // Claude now counts once per skill per turn like Codex. Keep history whose
+                        // logs may be gone, merge it per turn, and rescan to pick up missed reads.
+                        conn.execute_batch(
+                            "DELETE FROM skill_usage_sync;
+                            DELETE FROM skill_usage_events WHERE app='claude' AND turn_id<>''
+                                AND rowid NOT IN (SELECT rowid FROM (SELECT rowid, MIN(used_at)
+                                    FROM skill_usage_events WHERE app='claude' AND turn_id<>''
+                                    GROUP BY session_id, turn_id, skill_name));
+                            UPDATE skill_usage_events
+                                SET dedup_key=app||':'||session_id||':'||turn_id||':'||skill_name
+                                WHERE app='claude' AND turn_id<>'';",
+                        )
+                        .map_err(|e| AppError::Database(format!("重置 Skill 使用统计失败: {e}")))?;
+                        Self::set_user_version(conn, 21)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
