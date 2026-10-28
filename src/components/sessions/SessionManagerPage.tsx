@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSessionSearch } from "@/hooks/useSessionSearch";
+import { useViewState } from "@/hooks/useViewState";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
@@ -207,7 +208,8 @@ export function SessionManagerPage({ appId }: { appId: string }) {
     null,
   );
   const [tocDialogOpen, setTocDialogOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [search, setSearch] = useViewState("sessions.search", "");
+  const [isSearchOpen, setIsSearchOpen] = useState(search.length > 0);
   const [deleteTargets, setDeleteTargets] = useState<SessionMeta[] | null>(
     null,
   );
@@ -218,10 +220,25 @@ export function SessionManagerPage({ appId }: { appId: string }) {
   const [selectionMode, setSelectionMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [providerFilter, setProviderFilter] = useState<ProviderFilter>(
-    appId as ProviderFilter,
-  );
+  // 记下筛选所属的应用：顶部切换应用后筛选跟随新应用，否则保留用户的选择
+  const [filterState, setFilterState] = useViewState<{
+    appId: string;
+    filter: ProviderFilter;
+  }>("sessions.providerFilter", {
+    appId,
+    filter: appId as ProviderFilter,
+  });
+  const providerFilter =
+    filterState.appId === appId
+      ? filterState.filter
+      : (appId as ProviderFilter);
+  const setProviderFilter = (filter: ProviderFilter) =>
+    setFilterState({ appId, filter });
+  useEffect(() => {
+    if (filterState.appId !== appId) {
+      setFilterState({ appId, filter: appId as ProviderFilter });
+    }
+  }, [appId, filterState.appId, setFilterState]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [listViewMode, setListViewMode] = useState<SessionListViewMode>(
     readInitialSessionListViewMode,
@@ -235,10 +252,6 @@ export function SessionManagerPage({ appId }: { appId: string }) {
   const [expandedDirectoryGroups, setExpandedDirectoryGroups] = useState<
     Set<string>
   >(() => initialGroupExpansionState.expandedDirectoryKeys);
-
-  useEffect(() => {
-    setProviderFilter(appId as ProviderFilter);
-  }, [appId]);
 
   // 使用 FlexSearch 全文搜索
   const { search: searchSessions } = useSessionSearch({

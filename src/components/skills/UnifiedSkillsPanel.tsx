@@ -37,6 +37,7 @@ import {
   type InstalledSkill,
   type SkillUpdateInfo,
 } from "@/hooks/useSkills";
+import { useViewState } from "@/hooks/useViewState";
 import type { AppId } from "@/lib/api/types";
 import type { VisibleApps } from "@/types";
 import { cn } from "@/lib/utils";
@@ -156,14 +157,17 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [previewSkill, setPreviewSkill] = useState<InstalledSkill | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editPreview, setEditPreview] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useViewState("skills.search", "");
   const [expandedPlugins, setExpandedPlugins] = useState<Set<string>>(
     () => new Set(),
   );
   // "all" | "local" | "owner/repo"
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [sortOrder, setSortOrder] = useState("name");
-  const [usageRange, setUsageRange] = useState<SkillUsageRange>("day");
+  const [sourceFilter, setSourceFilter] = useViewState("skills.source", "all");
+  const [sortOrder, setSortOrder] = useViewState("skills.sort", "name");
+  const [usageRange, setUsageRange] = useViewState<SkillUsageRange>(
+    "skills.usageRange",
+    "day",
+  );
   const usage = useSkillUsage();
   const pluginStates = usePluginStates();
   const togglePlugin = useTogglePlugin();

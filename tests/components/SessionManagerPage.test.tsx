@@ -222,6 +222,50 @@ describe("SessionManagerPage", () => {
     setSessionFixtures(sessions, messages);
   });
 
+  it("restores a visible search field when returning to the page", async () => {
+    const first = renderPage();
+    await screen.findByRole("heading", { name: "Alpha Session" });
+    openSearch();
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Beta" },
+    });
+    await screen.findByRole("heading", { name: "Beta Session" });
+    first.unmount();
+
+    renderPage();
+    expect(screen.getByRole("textbox")).toHaveValue("Beta");
+    await screen.findByRole("heading", { name: "Beta Session" });
+  });
+
+  it("keeps the chosen provider filter when returning to the same app", async () => {
+    const first = renderPage();
+    await screen.findByRole("heading", { name: "Alpha Session" });
+    await switchProviderFilter(/sessionManager.providerFilterAll/);
+    await screen.findByRole("button", { name: /Claude Session/ });
+    first.unmount();
+
+    renderPage();
+    await screen.findByRole("button", { name: /Claude Session/ });
+  });
+
+  it("resets the provider filter after switching apps and back", async () => {
+    const first = renderPage();
+    await screen.findByRole("heading", { name: "Alpha Session" });
+    await switchProviderFilter(/sessionManager.providerFilterAll/);
+    await screen.findByRole("button", { name: /Claude Session/ });
+    first.unmount();
+
+    const second = renderPage("claude");
+    await screen.findByRole("heading", { name: "Claude Session" });
+    second.unmount();
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Alpha Session" });
+    expect(
+      screen.queryByRole("button", { name: /Claude Session/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("surfaces a relative Pi sessionDir instead of presenting an empty scan as authoritative", async () => {
     const discovery = vi.spyOn(piApi, "getSessionDiscovery").mockResolvedValue({
       status: "requires_project_context",

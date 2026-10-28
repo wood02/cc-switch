@@ -5,6 +5,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { server } from "./msw/server";
 import { resetProviderState } from "./msw/state";
+import { resetViewState } from "@/hooks/useViewState";
 import "./msw/tauriMocks";
 
 beforeAll(async () => {
@@ -25,6 +26,7 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup();
   resetProviderState();
+  resetViewState();
   server.resetHandlers();
   vi.clearAllMocks();
 });

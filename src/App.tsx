@@ -1395,11 +1395,16 @@ function App() {
                 />
                 {/* 技能组作用于当前查看的应用，不支持 Skill 的应用退回 Claude */}
                 {currentView === "skills" && (
-                  <SkillGroupSwitcher
-                    app={
-                      SKILLS_APP_IDS.includes(activeApp) ? activeApp : "claude"
-                    }
-                  />
+                  <>
+                    <SkillGroupSwitcher
+                      app={
+                        SKILLS_APP_IDS.includes(activeApp)
+                          ? activeApp
+                          : "claude"
+                      }
+                    />
+                    <div aria-hidden className="mx-1 h-5 w-px bg-border" />
+                  </>
                 )}
               </div>
             )}
@@ -1575,7 +1580,7 @@ function App() {
                         unifiedSkillsPanelRef.current?.checkUpdates()
                       }
                       className={cn(
-                        "hover:bg-black/5 dark:hover:bg-white/5",
+                        "relative hover:bg-black/5 dark:hover:bg-white/5",
                         skillsManagementBusy && "disabled:opacity-100",
                       )}
                     >
@@ -1587,6 +1592,12 @@ function App() {
                       {skillsCheckUpdatesState.isChecking
                         ? t("skills.checkingUpdates")
                         : t("skills.checkUpdates")}
+                      {skillUpdateCount > 0 &&
+                        !skillsCheckUpdatesState.isChecking && (
+                          <span className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 min-w-3.5 rounded-full bg-orange-500 px-1 text-center text-[10px] font-medium leading-[15px] text-white">
+                            {skillUpdateCount}
+                          </span>
+                        )}
                     </Button>
                   </>
                 )}
@@ -1846,6 +1857,7 @@ function App() {
                     </Button>
                   ))}
                 </nav>
+                <div aria-hidden className="h-5 w-px bg-border" />
                 <Button
                   variant="ghost"
                   size="icon"
