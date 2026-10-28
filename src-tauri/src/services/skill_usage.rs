@@ -6,7 +6,7 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -159,20 +159,158 @@ fn timestamp(value: &Value) -> Option<i64> {
         .map(|at| at.timestamp())
 }
 
+/// Keeps the `plugin:` namespace so plugin Skills stay apart from same-named managed Skills.
 fn name(value: &str) -> Option<String> {
-    // shortcut: directory names match Skills; source-qualified identity is deferred until collisions occur.
-    let value = value.rsplit(':').next()?.trim().trim_start_matches('/');
-    (!value.is_empty()
-        && value
-            .chars()
-            .all(|c| c.is_alphanumeric() || "-_.".contains(c)))
+    let value = value.trim().trim_start_matches('/');
+    (value.split(':').all(|part| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|c| c.is_alphanumeric() || "-_.".contains(c))
+    }))
     .then(|| value.to_string())
 }
 
 fn skill_path(path: &str) -> Option<String> {
     let path = Path::new(path);
     (path.file_name()?.to_str()? == "SKILL.md").then_some(())?;
+    let parts: Vec<_> = path.iter().filter_map(|part| part.to_str()).collect();
+    // .../plugins/cache/<marketplace>/<plugin>/<version>/skills/<skill>/SKILL.md
+    if let Some(at) = parts
+        .windows(2)
+        .rposition(|pair| pair == ["plugins", "cache"])
+    {
+        if parts.len() == at + 8 && parts[at + 5] == "skills" {
+            return name(&format!("{}:{}", parts[at + 3], parts[at + 6]));
+        }
+    }
     name(path.parent()?.file_name()?.to_str()?)
+}
+
+/// Plugins and the Skills they ship, keyed by `plugin` and `plugin:skill`, with descriptions.
+#[derive(Default)]
+struct PluginCatalog {
+    plugins: BTreeMap<String, String>,
+    skills: BTreeMap<String, String>,
+    sources: BTreeMap<String, BTreeSet<PluginSource>>,
+}
+
+/// Where a plugin is installed: the agent, the marketplace it came from, and what it ships.
+#[derive(Serialize, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[serde(rename_all = "camelCase")]
+struct PluginSource {
+    app: String,
+    marketplace: String,
+    version: String,
+    commands: usize,
+}
+
+/// Skills shipped by installed Claude/Codex plugins, as `plugin:skill`.
+fn plugin_catalog(cache_roots: &[(&str, PathBuf)]) -> PluginCatalog {
+    let children = |dir: &Path| -> Vec<PathBuf> {
+        let mut paths: Vec<_> = fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        // shortcut: the last version by name wins for descriptions; 5.10 sorts before 5.9.
+        paths.sort();
+        paths
+    };
+    let mut catalog = PluginCatalog::default();
+    for (app, root) in cache_roots {
+        for marketplace in children(root) {
+            let Some(marketplace_name) = marketplace.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            // OpenAI's own marketplaces ship Codex built-ins; temp_git_* are leftovers of installs.
+            if marketplace_name.starts_with("openai-") || marketplace_name.starts_with("temp_git_")
+            {
+                continue;
+            }
+            for plugin in children(&marketplace) {
+                let Some(plugin_name) = plugin.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                for version in children(&plugin) {
+                    let mut has_skills = false;
+                    for skill in children(&version.join("skills")) {
+                        let skill_md = skill.join("SKILL.md");
+                        if !skill_md.is_file() {
+                            continue;
+                        }
+                        let Some(key) = skill
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .and_then(|n| name(&format!("{plugin_name}:{n}")))
+                        else {
+                            continue;
+                        };
+                        let description =
+                            crate::services::skill::SkillService::parse_skill_metadata_static(
+                                &skill_md,
+                            )
+                            .ok()
+                            .and_then(|meta| meta.description)
+                            .unwrap_or_default();
+                        catalog.skills.insert(key, description.trim().to_string());
+                        has_skills = true;
+                    }
+                    if has_skills {
+                        let description = [".claude-plugin", ".codex-plugin"]
+                            .iter()
+                            .find_map(|dir| {
+                                let text =
+                                    fs::read_to_string(version.join(dir).join("plugin.json"))
+                                        .ok()?;
+                                serde_json::from_str::<Value>(&text).ok()?["description"]
+                                    .as_str()
+                                    .map(str::to_string)
+                            })
+                            .unwrap_or_default();
+                        catalog.plugins.insert(plugin_name.to_string(), description);
+                        let commands = fs::read_dir(version.join("commands"))
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "md"))
+                            .count();
+                        let sources = catalog.sources.entry(plugin_name.to_string()).or_default();
+                        // Versions are visited in order, so the later one replaces older caches.
+                        sources.retain(|source| {
+                            source.app != *app || source.marketplace != marketplace_name
+                        });
+                        sources.insert(PluginSource {
+                            app: app.to_string(),
+                            marketplace: marketplace_name.to_string(),
+                            version: version
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                            commands,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    catalog
+}
+
+/// Plugin Skills match by `plugin:skill`; any other namespaced call falls back to a managed Skill.
+fn resolve_skill(
+    skill: &str,
+    managed: &HashSet<String>,
+    plugins: &BTreeMap<String, String>,
+) -> Option<String> {
+    if managed.contains(skill) || plugins.contains_key(skill) {
+        return Some(skill.to_string());
+    }
+    let base = skill.rsplit(':').next()?;
+    managed.contains(base).then(|| base.to_string())
 }
 
 fn content_text(content: &Value) -> String {
@@ -590,6 +728,10 @@ pub struct SkillUsageSnapshot {
     #[serde(flatten)]
     status: ScanStatus,
     records: Vec<SkillUsageSummary>,
+    /// Installed plugin Skills and their descriptions, so unused ones can still show 0.
+    plugin_skills: BTreeMap<String, String>,
+    plugin_descriptions: BTreeMap<String, String>,
+    plugin_sources: BTreeMap<String, BTreeSet<PluginSource>>,
 }
 
 pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot, String> {
@@ -605,7 +747,7 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
         return Err("Invalid usage time range".to_string());
     }
     let installed = db.get_all_installed_skills().map_err(|e| e.to_string())?;
-    let names: HashSet<_> = installed
+    let managed: HashSet<_> = installed
         .values()
         .filter_map(|skill| {
             Path::new(&skill.directory)
@@ -614,6 +756,16 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
                 .and_then(name)
         })
         .collect();
+    let catalog = plugin_catalog(&[
+        (
+            "claude",
+            crate::config::get_claude_config_dir().join("plugins/cache"),
+        ),
+        (
+            "codex",
+            crate::codex_config::get_codex_config_dir().join("plugins/cache"),
+        ),
+    ]);
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     let mut statement = conn.prepare("SELECT skill_name, app, session_id, used_at, source FROM skill_usage_events WHERE used_at>=?1 AND used_at<?2").map_err(|e| e.to_string())?;
     let rows = statement
@@ -630,9 +782,9 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
     let mut summaries = HashMap::new();
     for row in rows {
         let (skill, app, session, at, source) = row.map_err(|e| e.to_string())?;
-        if !names.contains(&skill) {
+        let Some(skill) = resolve_skill(&skill, &managed, &catalog.skills) else {
             continue;
-        }
+        };
         let summary = summaries
             .entry((skill.clone(), app.clone()))
             .or_insert_with(|| SkillUsageSummary {
@@ -666,6 +818,9 @@ pub fn get_usage(db: &Database, boundaries: &[i64]) -> Result<SkillUsageSnapshot
             .status
             .clone(),
         records: summaries.into_values().collect(),
+        plugin_skills: catalog.skills,
+        plugin_descriptions: catalog.plugins,
+        plugin_sources: catalog.sources,
     })
 }
 
@@ -674,30 +829,6 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::io::Write;
-
-    #[test]
-    fn migration_merges_claude_history_per_turn_and_rescans() {
-        let db = Database::memory().unwrap();
-        let conn = db.conn.lock().unwrap();
-        conn.execute_batch("INSERT INTO skill_usage_events VALUES
-                ('claude:t2:archify','claude:t2:archify','archify','claude','s','t',20,'agent','skill_tool'),
-                ('claude:t1:archify','claude:t1:archify','archify','claude','s','t',10,'agent','skill_tool'),
-                ('codex:x:archify','codex:s:t:archify','archify','codex','s','t',30,'agent','skill_file_read');
-            INSERT INTO skill_usage_sync VALUES ('f',1,1,1,'x','{}');
-            PRAGMA user_version=20;").unwrap();
-        Database::apply_schema_migrations_on_conn(&conn).unwrap();
-        let count = |sql: &str| conn.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
-        assert_eq!(count("SELECT COUNT(*) FROM skill_usage_sync"), 0);
-        assert_eq!(
-            count("SELECT COUNT(*) FROM skill_usage_events WHERE app='codex'"),
-            1
-        );
-        assert_eq!(
-            count("SELECT used_at FROM skill_usage_events WHERE app='claude' AND dedup_key='claude:s:t:archify'"),
-            10
-        );
-        assert_eq!(count("SELECT COUNT(*) FROM skill_usage_events"), 2);
-    }
 
     #[test]
     fn migration_adds_independent_tables_without_changing_token_cursors() {
@@ -818,7 +949,7 @@ mod tests {
         let automatic = parse_line(&tool, "claude", &mut context, "fallback")
             .pop()
             .unwrap();
-        assert_eq!(manual.skill, "archify");
+        assert_eq!(manual.skill, "plugin:archify");
         assert_eq!(manual.dedup, automatic.dedup);
         let mut again = tool.clone();
         again["message"]["content"][0]["id"] = json!("tool-2");
@@ -835,6 +966,110 @@ mod tests {
         let result = json!({"type":"user","sessionId":"session","uuid":"user-3","promptId":"prompt-2","timestamp":"2026-10-16T01:03:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-2","content":"ok"}]}});
         parse_line(&result, "claude", &mut context, "fallback");
         assert_eq!(context.turn, "prompt-2");
+    }
+
+    #[test]
+    fn plugin_skills_keep_their_namespace_and_skip_openai_builtins() {
+        assert_eq!(
+            skill_path("/h/.codex/plugins/cache/ponytail/ponytail/5.3.2/skills/ponytail/SKILL.md")
+                .as_deref(),
+            Some("ponytail:ponytail")
+        );
+        assert_eq!(
+            skill_path("/h/.codex/skills/.system/imagegen/SKILL.md").as_deref(),
+            Some("imagegen")
+        );
+        assert_eq!(
+            name("/frontend-design:frontend-design").as_deref(),
+            Some("frontend-design:frontend-design")
+        );
+        assert_eq!(name("a::b"), None);
+
+        let dir = tempfile::tempdir().unwrap();
+        for skill in [
+            "official/frontend-design/v1/skills/frontend-design",
+            "official/frontend-design/v2/skills/frontend-design",
+            "openai-bundled/visualize/1.0/skills/visualize",
+            "temp_git_1/half/1.0/skills/half",
+        ] {
+            let path = dir.path().join(skill);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(
+                path.join("SKILL.md"),
+                "---\nname: x\ndescription: >\n  Build\n  pages.\n---\n",
+            )
+            .unwrap();
+        }
+        let manifest = dir
+            .path()
+            .join("official/frontend-design/v2/.claude-plugin");
+        fs::create_dir_all(&manifest).unwrap();
+        fs::write(manifest.join("plugin.json"), r#"{"description":"UI"}"#).unwrap();
+        let commands = dir.path().join("official/frontend-design/v2/commands");
+        fs::create_dir_all(&commands).unwrap();
+        fs::write(commands.join("polish.md"), "").unwrap();
+        fs::write(commands.join("notes.txt"), "").unwrap();
+        let catalog = plugin_catalog(&[
+            ("claude", dir.path().to_path_buf()),
+            ("codex", dir.path().join("missing")),
+        ]);
+        assert_eq!(
+            catalog.skills,
+            BTreeMap::from([(
+                "frontend-design:frontend-design".to_string(),
+                "Build pages.".to_string()
+            )])
+        );
+        assert_eq!(
+            catalog.plugins,
+            BTreeMap::from([("frontend-design".to_string(), "UI".to_string())])
+        );
+        assert_eq!(
+            catalog.sources["frontend-design"],
+            BTreeSet::from([PluginSource {
+                app: "claude".to_string(),
+                marketplace: "official".to_string(),
+                version: "v2".to_string(),
+                commands: 1,
+            }])
+        );
+        let plugins = catalog.skills;
+
+        let managed = HashSet::from(["frontend-design".to_string(), "archify".to_string()]);
+        let resolve = |skill| resolve_skill(skill, &managed, &plugins);
+        assert_eq!(
+            resolve("frontend-design:frontend-design").as_deref(),
+            Some("frontend-design:frontend-design")
+        );
+        assert_eq!(
+            resolve("frontend-design").as_deref(),
+            Some("frontend-design")
+        );
+        assert_eq!(
+            resolve("anthropic-skills:archify").as_deref(),
+            Some("archify")
+        );
+        assert_eq!(resolve("visualize:visualize"), None);
+        assert_eq!(resolve("compact"), None);
+    }
+
+    #[test]
+    fn migration_rescans_usage_for_plugin_namespaces() {
+        let db = Database::memory().unwrap();
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch("INSERT INTO skill_usage_events VALUES
+                ('codex:x:ponytail','codex:s:t:ponytail','ponytail','codex','s','t',30,'agent','skill_file_read');
+            INSERT INTO skill_usage_sync VALUES ('f',1,1,1,'x','{}');
+            PRAGMA user_version=20;").unwrap();
+        Database::apply_schema_migrations_on_conn(&conn).unwrap();
+        for table in ["skill_usage_sync", "skill_usage_events"] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0);
+        }
     }
 
     fn append(path: &Path, rows: &[Value]) {

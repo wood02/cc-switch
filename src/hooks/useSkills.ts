@@ -16,6 +16,7 @@ import {
   type SkillsShSearchResult,
   type SkillsShLeaderboardView,
 } from "@/lib/api/skills";
+import { settingsApi } from "@/lib/api/settings";
 import type { AppId } from "@/lib/api/types";
 import { mergeImportedSkills } from "@/hooks/useSkills.helpers";
 import { runSequentialBulkAction } from "@/lib/utils/sequentialBulkAction";
@@ -185,6 +186,48 @@ export function useRestoreSkillBackup() {
         queryClient.invalidateQueries({ queryKey: ["skills", "installed"] }),
         queryClient.invalidateQueries({ queryKey: ["skills", "backups"] }),
       ]),
+  });
+}
+
+/** 插件在各 agent 的启用状态，键为 `name@marketplace`；没有的键表示该 agent 未安装 */
+export function usePluginStates() {
+  return useQuery({
+    queryKey: ["plugins", "states"],
+    queryFn: async (): Promise<
+      Partial<Record<AppId, Record<string, boolean>>>
+    > => {
+      const [claude, codex] = await Promise.all([
+        settingsApi.listClaudeCodePlugins(),
+        settingsApi.listCodexPluginStates(),
+      ]);
+      return {
+        claude: Object.fromEntries(
+          claude.filter((p) => p.installed).map((p) => [p.id, p.enabled]),
+        ),
+        codex,
+      };
+    },
+  });
+}
+
+export function useTogglePlugin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["plugins", "write"],
+    mutationFn: ({
+      app,
+      id,
+      enabled,
+    }: {
+      app: AppId;
+      id: string;
+      enabled: boolean;
+    }) =>
+      app === "claude"
+        ? settingsApi.setClaudeCodePluginEnabled(id, enabled)
+        : settingsApi.setCodexPluginEnabled(id, enabled),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["plugins", "states"] }),
   });
 }
 

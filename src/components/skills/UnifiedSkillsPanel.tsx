@@ -10,6 +10,7 @@ import {
   Search,
   Eye,
   Download,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,8 @@ import {
   useDeleteSkillBackup,
   useInstalledSkills,
   useSkillUsage,
+  usePluginStates,
+  useTogglePlugin,
   useSkillBackups,
   useRestoreSkillBackup,
   useBulkToggleSkillApp,
@@ -102,6 +105,24 @@ export interface UnifiedSkillsPanelHandle {
   checkUpdates: () => void;
 }
 
+/** Most recent use in the selected range as relative time, or "" when unused. */
+function formatLastUsed(rows: { lastUsed: number }[], locale: string): string {
+  const last = Math.max(0, ...rows.map((row) => row.lastUsed));
+  if (!last) return "";
+  const diff = last - Date.now() / 1000;
+  const [unit, size] = (
+    [
+      ["day", 86400],
+      ["hour", 3600],
+      ["minute", 60],
+    ] as const
+  ).find(([, size]) => -diff >= size) ?? ["minute", 60];
+  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+    Math.round(diff / size),
+    unit,
+  );
+}
+
 function formatSkillBackupDate(unixSeconds: number): string {
   const date = new Date(unixSeconds * 1000);
   return Number.isNaN(date.getTime())
@@ -121,7 +142,7 @@ const UnifiedSkillsPanel = React.forwardRef<
     onNavigationBlockedChange,
     onCheckUpdatesStateChange,
   } = props;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -136,11 +157,16 @@ const UnifiedSkillsPanel = React.forwardRef<
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editPreview, setEditPreview] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [expandedPlugins, setExpandedPlugins] = useState<Set<string>>(
+    () => new Set(),
+  );
   // "all" | "local" | "owner/repo"
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("name");
   const [usageRange, setUsageRange] = useState<SkillUsageRange>("day");
   const usage = useSkillUsage();
+  const pluginStates = usePluginStates();
+  const togglePlugin = useTogglePlugin();
   const usageSnapshot = usage.data?.snapshots?.[usageRange];
   const usageError = usage.isError || !!usage.data?.status.error;
   const [writePending, setWritePending] = useState(false);
@@ -278,18 +304,35 @@ const UnifiedSkillsPanel = React.forwardRef<
   const hasLocalSkills = (skills ?? []).some(
     (skill) => getSkillSource(skill) === "local",
   );
+  // Plugin Skills come back from the backend as `plugin:skill`; they have no group.
+  const allPluginSkillNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const snapshot of Object.values(usage.data?.snapshots ?? {})) {
+      for (const name of [
+        ...Object.keys(snapshot.pluginSkills ?? {}),
+        ...snapshot.records.map((record) => record.skillName),
+      ]) {
+        if (name.includes(":")) names.add(name);
+      }
+    }
+    return names;
+  }, [usage.data?.snapshots]);
   // 选中的仓库被卸载干净后回落到全部，避免列表莫名为空
   const activeSourceFilter =
-    sourceFilter === "local"
-      ? hasLocalSkills
-        ? "local"
+    sourceFilter === "plugins"
+      ? allPluginSkillNames.size
+        ? "plugins"
         : "all"
-      : repoSources.includes(sourceFilter)
-        ? sourceFilter
-        : "all";
+      : sourceFilter === "local"
+        ? hasLocalSkills
+          ? "local"
+          : "all"
+        : repoSources.includes(sourceFilter)
+          ? sourceFilter
+          : "all";
 
   const filteredSkills = useMemo(() => {
-    if (!skills) return [];
+    if (!skills || activeSourceFilter === "plugins") return [];
 
     const sourceSkills =
       activeSourceFilter === "all"
@@ -372,14 +415,75 @@ const UnifiedSkillsPanel = React.forwardRef<
     });
   }, [filteredSkills, sortOrder, usageRecords]);
 
-  const usageSkillNames = useMemo(
-    () =>
-      new Set(
-        filteredSkills.map(
-          (skill) => skill.directory.split(/[\\/]/).pop() ?? "",
+  // Descriptions keyed by `plugin` and `plugin:skill`.
+  const { pluginDescriptions, pluginSources } = useMemo(() => {
+    const descriptions: Record<string, string> = {};
+    const sources: NonNullable<SkillUsageSnapshot["pluginSources"]> = {};
+    for (const snapshot of Object.values(usage.data?.snapshots ?? {})) {
+      Object.assign(
+        descriptions,
+        snapshot.pluginDescriptions,
+        snapshot.pluginSkills,
+      );
+      Object.assign(sources, snapshot.pluginSources);
+    }
+    return { pluginDescriptions: descriptions, pluginSources: sources };
+  }, [usage.data?.snapshots]);
+  const pluginSkillNames = useMemo(() => {
+    if (activeSourceFilter !== "all" && activeSourceFilter !== "plugins")
+      return new Set<string>();
+    const query = searchQuery.trim().toLocaleLowerCase();
+    return new Set(
+      [...allPluginSkillNames].filter((name) =>
+        [name, pluginDescriptions[name]].some((value) =>
+          value?.toLocaleLowerCase().includes(query),
         ),
       ),
-    [filteredSkills],
+    );
+  }, [
+    activeSourceFilter,
+    allPluginSkillNames,
+    pluginDescriptions,
+    searchQuery,
+  ]);
+  // One group per plugin; unused Skills stay listed with 0.
+  const pluginUsageGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { name: string; rows: SkillUsageSummary[]; count: number }[]
+    >();
+    for (const name of pluginSkillNames) {
+      const rows = usageRecords.get(name) ?? [];
+      const plugin = name.split(":")[0];
+      const skills = groups.get(plugin) ?? [];
+      skills.push({
+        name,
+        rows,
+        count: rows.reduce((sum, row) => sum + row.count, 0),
+      });
+      groups.set(plugin, skills);
+    }
+    return [...groups]
+      .map(([plugin, skills]) => ({
+        plugin,
+        skills: skills.sort(
+          (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+        ),
+        rows: skills.flatMap((skill) => skill.rows),
+        count: skills.reduce((sum, skill) => sum + skill.count, 0),
+      }))
+      .sort((a, b) => b.count - a.count || a.plugin.localeCompare(b.plugin));
+  }, [pluginSkillNames, usageRecords]);
+
+  const usageSkillNames = useMemo(
+    () =>
+      new Set([
+        ...filteredSkills.map(
+          (skill) => skill.directory.split(/[\\/]/).pop() ?? "",
+        ),
+        ...pluginSkillNames,
+      ]),
+    [filteredSkills, pluginSkillNames],
   );
   const usageTotal = (snapshot?: SkillUsageSnapshot) => {
     const totals = skillUsageTotals(snapshot, usageSkillNames);
@@ -925,6 +1029,11 @@ const UnifiedSkillsPanel = React.forwardRef<
                 ）
               </SelectItem>
             )}
+            {allPluginSkillNames.size > 0 && (
+              <SelectItem value="plugins">
+                {t("skills.usage.pluginSkills")}（{allPluginSkillNames.size}）
+              </SelectItem>
+            )}
             {repoSources.map((source) => (
               <SelectItem key={source} value={source}>
                 {source}（
@@ -999,10 +1108,14 @@ const UnifiedSkillsPanel = React.forwardRef<
               </div>
             </div>
           ) : filteredSkills.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-              <Search className="mb-4 h-10 w-10 opacity-40" />
-              <p className="text-sm">{t("skills.noInstalledSearchResults")}</p>
-            </div>
+            pluginUsageGroups.length > 0 ? null : (
+              <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                <Search className="mb-4 h-10 w-10 opacity-40" />
+                <p className="text-sm">
+                  {t("skills.noInstalledSearchResults")}
+                </p>
+              </div>
+            )
           ) : (
             <TooltipProvider delayDuration={300}>
               <div className="rounded-xl border border-border-default overflow-hidden">
@@ -1039,6 +1152,205 @@ const UnifiedSkillsPanel = React.forwardRef<
                 ))}
               </div>
             </TooltipProvider>
+          )}
+          {pluginUsageGroups.length > 0 && (
+            <div className={cn(filteredSkills.length > 0 && "mt-4")}>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                {t("skills.usage.pluginSkills")}
+              </h3>
+              <div className="space-y-2">
+                {pluginUsageGroups.map((group) => {
+                  // A plugin with one Skill is a plain row; there is nothing to expand.
+                  const single =
+                    group.skills.length === 1 ? group.skills[0].name : null;
+                  const shortName = single?.split(":").slice(1).join(":");
+                  // Searching opens groups so matching Skills are visible.
+                  const expanded =
+                    !single &&
+                    (!!searchQuery.trim() || expandedPlugins.has(group.plugin));
+                  const sources = pluginSources[group.plugin] ?? [];
+                  const tag = [
+                    shortName !== undefined &&
+                      shortName !== group.plugin &&
+                      group.plugin,
+                    ...new Set(sources.map((source) => source.marketplace)),
+                    ...new Set(sources.map((source) => source.version)),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  const commands = Math.max(
+                    0,
+                    ...sources.map((source) => source.commands),
+                  );
+                  const description =
+                    (single && pluginDescriptions[single]) ||
+                    pluginDescriptions[group.plugin];
+                  const heading = (
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-medium text-sm text-foreground truncate">
+                          {shortName ?? group.plugin}
+                        </span>
+                        <span className="text-xs text-muted-foreground/50 truncate">
+                          {[
+                            tag,
+                            !single &&
+                              t("skills.usage.pluginSkillCount", {
+                                count: group.skills.length,
+                              }),
+                            commands > 0 &&
+                              t("skills.usage.pluginCommandCount", {
+                                count: commands,
+                              }),
+                            formatLastUsed(group.rows, i18n.language),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </span>
+                      {description && (
+                        <span
+                          className="block text-xs text-muted-foreground truncate"
+                          title={description}
+                        >
+                          {description}
+                        </span>
+                      )}
+                    </span>
+                  );
+                  return (
+                    <div
+                      key={group.plugin}
+                      className="rounded-xl border border-border-default overflow-hidden"
+                    >
+                      <ListItemRow isLast={!expanded}>
+                        {single ? (
+                          <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                            <span className="w-4 flex-shrink-0" />
+                            {heading}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            onClick={() =>
+                              setExpandedPlugins((current) => {
+                                const next = new Set(current);
+                                if (!next.delete(group.plugin))
+                                  next.add(group.plugin);
+                                return next;
+                              })
+                            }
+                            className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
+                          >
+                            <ChevronRight
+                              className={cn(
+                                "h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform",
+                                expanded && "rotate-90",
+                              )}
+                            />
+                            {heading}
+                          </button>
+                        )}
+                        <div className="flex flex-shrink-0 items-center gap-1">
+                          {sources.map(({ app, marketplace }) => {
+                            const id = `${group.plugin}@${marketplace}`;
+                            const enabled = pluginStates.data?.[app]?.[id];
+                            const label = APP_ICON_MAP[app]?.label ?? app;
+                            return (
+                              <button
+                                key={`${app}:${marketplace}`}
+                                type="button"
+                                aria-pressed={!!enabled}
+                                disabled={
+                                  enabled === undefined ||
+                                  togglePlugin.isPending
+                                }
+                                title={t(
+                                  enabled === undefined
+                                    ? "skills.usage.pluginNotInstalled"
+                                    : enabled
+                                      ? "skills.usage.pluginEnabledIn"
+                                      : "skills.usage.pluginDisabledIn",
+                                  { app: label },
+                                )}
+                                onClick={() =>
+                                  togglePlugin.mutate(
+                                    { app, id, enabled: !enabled },
+                                    {
+                                      onSuccess: () =>
+                                        toast.success(
+                                          t("skills.usage.pluginToggled", {
+                                            app: label,
+                                          }),
+                                          { closeButton: true },
+                                        ),
+                                      onError: (error) =>
+                                        toast.error(t("common.error"), {
+                                          description: String(error),
+                                        }),
+                                    },
+                                  )
+                                }
+                                className={cn(
+                                  "rounded-md p-1 transition-opacity disabled:cursor-default",
+                                  enabled
+                                    ? "text-foreground"
+                                    : "opacity-30 grayscale hover:opacity-60",
+                                )}
+                              >
+                                {APP_ICON_MAP[app]?.icon}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <SkillUsageTrend
+                          records={group.rows}
+                          boundaries={usage.boundaries[usageRange]}
+                          range={usageRange}
+                          hoveredApp={null}
+                          status={usageSnapshot}
+                        />
+                      </ListItemRow>
+                      {expanded && (
+                        <div className="bg-muted/30">
+                          {group.skills.map(({ name, rows }, index) => (
+                            <ListItemRow
+                              key={name}
+                              isLast={index === group.skills.length - 1}
+                            >
+                              <div className="ml-6 flex-1 min-w-0 self-stretch flex items-center gap-2 border-l border-border-default pl-3">
+                                <span className="text-sm text-foreground flex-shrink-0">
+                                  {name.split(":").slice(1).join(":")}
+                                </span>
+                                {pluginDescriptions[name] && (
+                                  <span
+                                    className="min-w-0 truncate text-xs text-muted-foreground/70"
+                                    title={pluginDescriptions[name]}
+                                  >
+                                    {pluginDescriptions[name]}
+                                  </span>
+                                )}
+                                <span className="ml-auto text-xs text-muted-foreground/50 flex-shrink-0">
+                                  {formatLastUsed(rows, i18n.language)}
+                                </span>
+                              </div>
+                              <SkillUsageTrend
+                                records={rows}
+                                boundaries={usage.boundaries[usageRange]}
+                                range={usageRange}
+                                hoveredApp={null}
+                                status={usageSnapshot}
+                              />
+                            </ListItemRow>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       </ScrollArea>

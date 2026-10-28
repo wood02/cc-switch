@@ -601,6 +601,15 @@ impl Database {
                         .map_err(|e| AppError::Database(format!("重置 Skill 使用统计失败: {e}")))?;
                         Self::set_user_version(conn, 21)?;
                     }
+                    21 => {
+                        // Skill names now keep their `plugin:` namespace. The UI shows at most
+                        // 8 days, whose logs still exist, so a full rescan loses nothing visible.
+                        conn.execute_batch(
+                            "DELETE FROM skill_usage_sync; DELETE FROM skill_usage_events;",
+                        )
+                        .map_err(|e| AppError::Database(format!("重置 Skill 使用统计失败: {e}")))?;
+                        Self::set_user_version(conn, 22)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"

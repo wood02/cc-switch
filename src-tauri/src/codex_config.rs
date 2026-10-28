@@ -1083,6 +1083,71 @@ pub fn read_codex_config_text() -> Result<String, AppError> {
     }
 }
 
+/// Codex 插件启用状态：`[plugins."name@marketplace"].enabled`，没有该表的插件视为未安装
+pub fn list_codex_plugin_states_in(
+    path: &Path,
+) -> Result<std::collections::BTreeMap<String, bool>, AppError> {
+    if !path.exists() {
+        return Ok(Default::default());
+    }
+    let text = std::fs::read_to_string(path).map_err(|e| AppError::io(path, e))?;
+    let doc = text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Config(format!("config.toml 解析失败: {e}")))?;
+    Ok(doc
+        .get("plugins")
+        .and_then(|item| item.as_table_like())
+        .map(|plugins| {
+            plugins
+                .iter()
+                .map(|(id, item)| {
+                    let enabled = item
+                        .get("enabled")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false);
+                    (id.to_string(), enabled)
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// 只改一个插件的 `enabled`，保留其余内容与注释；解析失败时报错而不是覆盖
+pub fn set_codex_plugin_enabled_in(path: &Path, id: &str, enabled: bool) -> Result<(), AppError> {
+    let text = if path.exists() {
+        std::fs::read_to_string(path).map_err(|e| AppError::io(path, e))?
+    } else {
+        String::new()
+    };
+    let mut doc = text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Config(format!("config.toml 解析失败: {e}")))?;
+    let plugins = doc
+        .entry("plugins")
+        .or_insert_with(|| {
+            let mut table = toml_edit::Table::new();
+            table.set_implicit(true);
+            toml_edit::Item::Table(table)
+        })
+        .as_table_like_mut()
+        .ok_or_else(|| AppError::Config("config.toml 的 plugins 必须是表".into()))?;
+    let plugin = plugins
+        .entry(id)
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .ok_or_else(|| AppError::Config(format!("config.toml 的 plugins.\"{id}\" 必须是表")))?;
+    plugin.insert("enabled", toml_edit::value(enabled));
+    crate::config::write_text_file(path, &doc.to_string())
+}
+
+pub fn list_codex_plugin_states() -> Result<std::collections::BTreeMap<String, bool>, AppError> {
+    list_codex_plugin_states_in(&get_codex_config_path())
+}
+
+pub fn set_codex_plugin_enabled(id: &str, enabled: bool) -> Result<(), AppError> {
+    set_codex_plugin_enabled_in(&get_codex_config_path(), id, enabled)
+}
+
 /// 对非空的 TOML 文本进行语法校验
 pub fn validate_config_toml(text: &str) -> Result<(), AppError> {
     if text.trim().is_empty() {
@@ -8346,5 +8411,36 @@ model_catalog_json = "cc-switch-model-catalog.json"
             result.is_err(),
             "file larger than MAX_CODEX_CATALOG_BYTES must be rejected"
         );
+    }
+}
+
+#[cfg(test)]
+mod codex_plugin_state_tests {
+    use super::*;
+
+    #[test]
+    fn lists_and_toggles_one_plugin_keeping_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "model = \"x\" # keep me\n\n[plugins.\"a@m\"]\nenabled = true\n\n[plugins.\"b@m\"]\nenabled = false\n",
+        )
+        .unwrap();
+        let states = list_codex_plugin_states_in(&path).unwrap();
+        assert_eq!(states.get("a@m"), Some(&true));
+        assert_eq!(states.get("b@m"), Some(&false));
+
+        set_codex_plugin_enabled_in(&path, "a@m", false).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("model = \"x\" # keep me"));
+        assert_eq!(
+            list_codex_plugin_states_in(&path).unwrap().get("a@m"),
+            Some(&false)
+        );
+
+        std::fs::write(&path, "[broken").unwrap();
+        assert!(set_codex_plugin_enabled_in(&path, "a@m", true).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[broken");
     }
 }

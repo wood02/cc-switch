@@ -2798,6 +2798,13 @@
       "disabledWithUsage": "Disabled now, with usage recorded in this period",
       "estimated": "Codex is estimated from explicit selections and successful SKILL.md reads. Repeated reads in one turn count once.",
       "callsTitle": "Calls",
+      "pluginSkills": "Plugin Skills",
+      "pluginSkillCount": "{{count}} skills",
+      "pluginCommandCount": "{{count}} commands",
+      "pluginEnabledIn": "Enabled in {{app}}, click to disable",
+      "pluginDisabledIn": "Disabled in {{app}}, click to enable",
+      "pluginNotInstalled": "Not installed in {{app}}",
+      "pluginToggled": "Updated, restart {{app}} to apply",
       "enabledCount": "{{count}} skills",
       "callCount": "{{count}} calls"
     }

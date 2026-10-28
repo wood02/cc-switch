@@ -15,7 +15,6 @@ import {
   Book,
   Brain,
   History,
-  BarChart2,
   Download,
   FolderArchive,
   Sparkles,
@@ -180,11 +179,14 @@ const VALID_VIEWS: View[] = [
 
 const getInitialView = (): View => {
   const saved = localStorage.getItem(VIEW_STORAGE_KEY) as View | null;
-  if (saved && VALID_VIEWS.includes(saved)) {
+  if (saved && saved !== "providers" && VALID_VIEWS.includes(saved)) {
     return saved;
   }
-  return "providers";
+  return "skills";
 };
+
+// 供应商管理已移除：这四个视图作为顶部常驻导航，技能页为首页
+const MAIN_VIEWS: View[] = ["skills", "prompts", "sessions", "mcp"];
 
 function App() {
   const { t } = useTranslation();
@@ -271,10 +273,6 @@ function App() {
 
   // Fallback from sessions view when switching to an app without session support
   useEffect(() => {
-    if (currentView === "mcp" && sharedFeatureApp === "pi") {
-      setCurrentView("providers");
-      return;
-    }
     if (
       currentView === "sessions" &&
       sharedFeatureApp !== "claude" &&
@@ -287,7 +285,7 @@ function App() {
       sharedFeatureApp !== "pi" &&
       sharedFeatureApp !== "mcode"
     ) {
-      setCurrentView("providers");
+      setCurrentView("skills");
     }
   }, [sharedFeatureApp, currentView]);
 
@@ -735,13 +733,13 @@ function App() {
       if (document.body.style.overflow === "hidden") return;
 
       const view = currentViewRef.current;
-      if (view === "providers") return;
+      if (MAIN_VIEWS.includes(view)) return;
       if (managementBusyRef.current) return;
 
       if (isTextEditableTarget(event.target)) return;
 
       event.preventDefault();
-      setCurrentView(view === "skillsDiscovery" ? "skills" : "providers");
+      setCurrentView("skills");
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1079,7 +1077,7 @@ function App() {
           return (
             <SettingsPage
               open={true}
-              onOpenChange={() => setCurrentView("providers")}
+              onOpenChange={() => setCurrentView("skills")}
               onImportSuccess={handleImportSuccess}
               defaultTab={settingsDefaultTab}
             />
@@ -1089,7 +1087,7 @@ function App() {
             <PromptPanel
               ref={promptPanelRef}
               open={true}
-              onOpenChange={() => setCurrentView("providers")}
+              onOpenChange={() => setCurrentView("skills")}
               appId={sharedFeatureApp}
               onInteractionBlockedChange={setPromptManagementBusy}
               onNavigationBlockedChange={setPromptNavigationBusy}
@@ -1128,14 +1126,12 @@ function App() {
           return (
             <UnifiedMcpPanel
               ref={mcpPanelRef}
-              onOpenChange={() => setCurrentView("providers")}
+              onOpenChange={() => setCurrentView("skills")}
               onInteractionBlockedChange={setMcpManagementBusy}
             />
           );
         case "agents":
-          return (
-            <AgentsPanel onOpenChange={() => setCurrentView("providers")} />
-          );
+          return <AgentsPanel onOpenChange={() => setCurrentView("skills")} />;
         case "universal":
           return (
             <div className="px-6 pt-4">
@@ -1352,20 +1348,14 @@ function App() {
             className="flex items-center gap-1"
             style={{ WebkitAppRegion: "no-drag" } as any}
           >
-            {currentView !== "providers" ? (
+            {!MAIN_VIEWS.includes(currentView) ? (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
                   disabled={managementBusy}
                   aria-label={t("common.back")}
-                  onClick={() =>
-                    setCurrentView(
-                      currentView === "skillsDiscovery"
-                        ? "skills"
-                        : "providers",
-                    )
-                  }
+                  onClick={() => setCurrentView("skills")}
                   className={cn(
                     "mr-2 rounded-lg",
                     managementBusy && "disabled:opacity-100",
@@ -1395,6 +1385,14 @@ function App() {
                     t("openclaw.agents.title")}
                   {currentView === "hermesMemory" && t("hermes.memory.title")}
                 </h1>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <RoutingActivationBrand
+                  active={false}
+                  contextKey={activeApp}
+                  ready={true}
+                />
                 {/* 技能组作用于当前查看的应用，不支持 Skill 的应用退回 Claude */}
                 {currentView === "skills" && (
                   <SkillGroupSwitcher
@@ -1404,48 +1402,10 @@ function App() {
                   />
                 )}
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <RoutingActivationBrand
-                  active={isProxyRunning && isCurrentAppTakeoverActive}
-                  contextKey={activeApp}
-                  ready={
-                    proxyStatus !== undefined && takeoverStatus !== undefined
-                  }
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setSettingsDefaultTab("general");
-                    setCurrentView("settings");
-                  }}
-                  title={t("common.settings")}
-                  className="hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
-                {isCurrentAppTakeoverActive && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setSettingsDefaultTab("usage");
-                      setCurrentView("settings");
-                    }}
-                    title={t("usage.title", {
-                      defaultValue: "使用统计",
-                    })}
-                    className="hover:bg-black/5 dark:hover:bg-white/5"
-                  >
-                    <BarChart2 className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
             )}
           </div>
 
-          <div className="flex flex-1 min-w-0 items-center justify-end gap-1.5">
+          <div className="flex flex-1 min-w-0 items-center gap-1.5">
             {currentView === "providers" &&
               (activeApp === "claude-desktop" || proxyAppId) && (
                 <div
@@ -1476,18 +1436,7 @@ function App() {
                   <ProfileSwitcher activeApp={activeApp} />
                 </div>
               )}
-            {/* 弹性中段：空间不足时由 AppSwitcher 自行收纳溢出应用；
-                justify-end + overflow-hidden 只裁剪 resize 瞬间的过渡帧 */}
-            <div className="flex flex-1 min-w-0 items-center justify-end overflow-hidden py-4">
-              {currentView === "providers" && (
-                <AppSwitcher
-                  activeApp={activeApp}
-                  onSwitch={setActiveApp}
-                  visibleApps={visibleApps}
-                />
-              )}
-            </div>
-            {/* 固定右端：主操作（添加供应商等）shrink-0，任何配置下不被挤出 */}
+            {/* 当前页操作紧跟左侧分组，shrink-0 不被挤出 */}
             <div className="flex shrink-0 items-center py-4">
               <div
                 className="flex shrink-0 items-center gap-1.5"
@@ -1560,7 +1509,7 @@ function App() {
                           )}
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-44">
+                      <DropdownMenuContent align="start" className="min-w-44">
                         <DropdownMenuItem
                           onSelect={() =>
                             unifiedSkillsPanelRef.current?.openCreate()
@@ -1841,6 +1790,76 @@ function App() {
                 )}
               </div>
             </div>
+            {/* 弹性中段兼作留白：空间不足时由 AppSwitcher 自行收纳溢出应用 */}
+            <div className="flex flex-1 min-w-0 items-center overflow-hidden py-4">
+              {(currentView === "prompts" || currentView === "sessions") && (
+                <AppSwitcher
+                  activeApp={activeApp}
+                  onSwitch={setActiveApp}
+                  visibleApps={visibleApps}
+                />
+              )}
+            </div>
+            {/* 页面导航和设置固定在最右，切页时位置不动 */}
+            {MAIN_VIEWS.includes(currentView) && (
+              <div
+                className="flex shrink-0 items-center gap-2"
+                style={{ WebkitAppRegion: "no-drag" } as any}
+              >
+                <nav className="flex items-center gap-1 p-1 bg-muted rounded-xl">
+                  {(
+                    [
+                      [
+                        "skills",
+                        skillsButtonTitle,
+                        <Sparkles key="i" className="w-4 h-4" />,
+                      ],
+                      [
+                        "prompts",
+                        t("prompts.manage"),
+                        <Book key="i" className="w-4 h-4" />,
+                      ],
+                      [
+                        "sessions",
+                        t("sessionManager.title"),
+                        <History key="i" className="w-4 h-4" />,
+                      ],
+                      ["mcp", t("mcp.title"), <McpIcon key="i" size={16} />],
+                    ] as const
+                  ).map(([view, title, icon]) => (
+                    <Button
+                      key={view}
+                      variant="ghost"
+                      size="sm"
+                      disabled={managementBusy && currentView !== view}
+                      onClick={() => setCurrentView(view)}
+                      aria-current={currentView === view ? "page" : undefined}
+                      className={cn(
+                        "relative w-8 px-2 text-muted-foreground hover:text-foreground",
+                        currentView === view &&
+                          "bg-background text-foreground shadow-sm hover:bg-background",
+                      )}
+                      title={title}
+                    >
+                      {icon}
+                      {view === "skills" && skillUpdateBadge}
+                    </Button>
+                  ))}
+                </nav>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setSettingsDefaultTab("general");
+                    setCurrentView("settings");
+                  }}
+                  title={t("common.settings")}
+                  className="hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </header>

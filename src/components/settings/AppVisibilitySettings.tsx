@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Filter, FolderOpen, Wrench } from "lucide-react";
+import { Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { cn } from "@/lib/utils";
@@ -89,20 +89,6 @@ export function AppVisibilitySettings({
           );
         })}
       </div>
-      <ToggleRow
-        icon={<FolderOpen className="h-4 w-4 text-emerald-500" />}
-        title={t("settings.appVisibility.showProfileSwitcher")}
-        description={t("settings.appVisibility.showProfileSwitcherDescription")}
-        checked={settings.showProfileSwitcher ?? true}
-        onCheckedChange={(value) => onChange({ showProfileSwitcher: value })}
-      />
-      <ToggleRow
-        icon={<Wrench className="h-4 w-4 text-blue-500" />}
-        title={t("settings.appVisibility.openSkillsOnStartup")}
-        description={t("settings.appVisibility.openSkillsOnStartupDescription")}
-        checked={settings.openSkillsOnStartup ?? false}
-        onCheckedChange={(value) => onChange({ openSkillsOnStartup: value })}
-      />
       <ToggleRow
         icon={<Filter className="h-4 w-4 text-violet-500" />}
         title={t("settings.appVisibility.skillsFollowVisibleApps")}

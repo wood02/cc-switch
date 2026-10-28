@@ -260,7 +260,7 @@ fn handle_deeplink_url(
         url_for_log(url_str)
     );
 
-    match crate::deeplink::parse_deeplink_url(url_str) {
+    match crate::deeplink::parse_supported_deeplink_url(url_str) {
         Ok(request) => {
             log::info!(
                 "✓ Successfully parsed deep link: resource={}, app={:?}, name={:?}",
@@ -1442,6 +1442,10 @@ pub fn run() {
             commands::read_claude_plugin_config,
             commands::apply_claude_plugin_config,
             commands::is_claude_plugin_applied,
+            commands::list_claude_code_plugins,
+            commands::set_claude_code_plugin_enabled,
+            commands::list_codex_plugin_states,
+            commands::set_codex_plugin_enabled,
             commands::apply_claude_onboarding_skip,
             commands::clear_claude_onboarding_skip,
             // Claude MCP management
@@ -1847,7 +1851,7 @@ pub fn run() {
                             }
 
                             // 解析并广播深链接事件，复用与 single_instance 相同的逻辑
-                            match crate::deeplink::parse_deeplink_url(&url_str) {
+                            match crate::deeplink::parse_supported_deeplink_url(&url_str) {
                                 Ok(request) => {
                                     log::info!(
                                         "Successfully parsed deep link from RunEvent::Opened: resource={}, app={:?}",
@@ -1997,38 +2001,21 @@ async fn enabled_proxy_apps_on_startup(db: &database::Database) -> Vec<&'static 
 }
 
 async fn restore_proxy_state_on_startup(state: &store::AppState) {
-    // 收集需要恢复接管的应用列表（从 proxy_config.enabled 读取）
-    let apps_to_restore = enabled_proxy_apps_on_startup(&state.db).await;
+    // 供应商切换已从产品中移除，界面上没有关闭代理的入口：
+    // 上次留下的接管状态不再恢复，而是彻底关闭（还原 Live、清除各应用 enabled、删除备份），
+    // 避免 agent 一直指向一个无法再管理的本地代理。
+    let apps_to_disable = enabled_proxy_apps_on_startup(&state.db).await;
 
-    if apps_to_restore.is_empty() {
-        log::debug!("启动时无需恢复代理状态");
+    if apps_to_disable.is_empty() {
+        log::debug!("启动时无代理接管残留");
         return;
     }
 
-    log::info!("检测到上次代理状态需要恢复，应用列表: {apps_to_restore:?}");
+    log::info!("检测到代理接管状态，正在关闭并还原配置，应用列表: {apps_to_disable:?}");
 
-    // 逐个恢复接管状态
-    for app_type in apps_to_restore {
-        match state
-            .proxy_service
-            .set_takeover_for_app(app_type, true)
-            .await
-        {
-            Ok(()) => {
-                log::info!("✓ 已恢复 {app_type} 的代理接管状态");
-            }
-            Err(e) => {
-                log::error!("✗ 恢复 {app_type} 的代理接管状态失败: {e}");
-                // 失败时清除该应用的状态，避免下次启动再次尝试
-                if let Err(clear_err) = state
-                    .proxy_service
-                    .set_takeover_for_app(app_type, false)
-                    .await
-                {
-                    log::error!("清除 {app_type} 代理状态失败: {clear_err}");
-                }
-            }
-        }
+    match state.proxy_service.stop_with_restore().await {
+        Ok(()) => log::info!("✓ 已关闭代理接管并还原 Live 配置"),
+        Err(e) => log::error!("✗ 关闭代理接管失败: {e}"),
     }
 }
 

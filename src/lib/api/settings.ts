@@ -108,6 +108,25 @@ export const settingsApi = {
     return await invoke("apply_claude_plugin_config", { official });
   },
 
+  async listClaudeCodePlugins(): Promise<ClaudeCodePlugin[]> {
+    return await invoke("list_claude_code_plugins");
+  },
+
+  async setClaudeCodePluginEnabled(
+    id: string,
+    enabled: boolean,
+  ): Promise<void> {
+    await invoke("set_claude_code_plugin_enabled", { id, enabled });
+  },
+
+  async listCodexPluginStates(): Promise<Record<string, boolean>> {
+    return await invoke("list_codex_plugin_states");
+  },
+
+  async setCodexPluginEnabled(id: string, enabled: boolean): Promise<void> {
+    await invoke("set_codex_plugin_enabled", { id, enabled });
+  },
+
   async applyClaudeOnboardingSkip(): Promise<boolean> {
     return await invoke("apply_claude_onboarding_skip");
   },
@@ -367,3 +386,14 @@ export const backupsApi = {
     await invoke("delete_db_backup", { filename });
   },
 };
+
+export interface ClaudeCodePlugin {
+  id: string;
+  name: string;
+  marketplace: string;
+  version?: string | null;
+  scope?: string | null;
+  description?: string | null;
+  installed: boolean;
+  enabled: boolean;
+}

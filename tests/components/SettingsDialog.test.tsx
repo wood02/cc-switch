@@ -287,26 +287,6 @@ describe("SettingsPage Component", () => {
   });
 
   it.each([undefined, false, true])(
-    "saves the startup Skills switch from its %s state",
-    async (enabled) => {
-      settingsMock.settings.openSkillsOnStartup = enabled;
-      renderSettingsPage();
-      const toggle = screen.getByRole("switch", {
-        name: "settings.appVisibility.openSkillsOnStartup",
-      });
-      if (enabled) expect(toggle).toBeChecked();
-      else expect(toggle).not.toBeChecked();
-
-      fireEvent.click(toggle);
-      await waitFor(() =>
-        expect(settingsMock.autoSaveSettings).toHaveBeenCalledWith({
-          openSkillsOnStartup: !enabled,
-        }),
-      );
-    },
-  );
-
-  it.each([undefined, false, true])(
     "saves the Skills app visibility switch from its %s state",
     async (enabled) => {
       settingsMock.settings.skillsFollowVisibleApps = enabled;

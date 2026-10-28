@@ -46,3 +46,29 @@ pub async fn apply_claude_onboarding_skip() -> Result<bool, String> {
 pub async fn clear_claude_onboarding_skip() -> Result<bool, String> {
     crate::claude_mcp::clear_has_completed_onboarding().map_err(|e| e.to_string())
 }
+
+/// Claude Code 插件：列出已安装/已登记的插件
+#[tauri::command]
+pub async fn list_claude_code_plugins(
+) -> Result<Vec<crate::claude_plugin::ClaudeCodePlugin>, String> {
+    crate::claude_plugin::list_claude_code_plugins().map_err(|e| e.to_string())
+}
+
+/// Claude Code 插件：在 settings.json 的 enabledPlugins 中启用/禁用
+#[tauri::command]
+pub async fn set_claude_code_plugin_enabled(id: String, enabled: bool) -> Result<(), String> {
+    crate::claude_plugin::set_claude_code_plugin_enabled(&id, enabled).map_err(|e| e.to_string())
+}
+
+/// Codex 插件：config.toml 中各插件的启用状态
+#[tauri::command]
+pub async fn list_codex_plugin_states() -> Result<std::collections::BTreeMap<String, bool>, String>
+{
+    crate::codex_config::list_codex_plugin_states().map_err(|e| e.to_string())
+}
+
+/// Codex 插件：在 config.toml 中启用/禁用
+#[tauri::command]
+pub async fn set_codex_plugin_enabled(id: String, enabled: bool) -> Result<(), String> {
+    crate::codex_config::set_codex_plugin_enabled(&id, enabled).map_err(|e| e.to_string())
+}

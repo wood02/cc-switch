@@ -727,6 +727,9 @@ fn handle_provider_click(
 }
 
 /// 创建动态托盘菜单
+// 供应商切换已从产品中移除：托盘不再显示各应用的供应商子菜单和项目 Profile 子菜单
+const SHOW_PROVIDER_MENUS: bool = false;
+
 pub fn create_tray_menu(
     app: &tauri::AppHandle,
     app_state: &AppState,
@@ -768,7 +771,7 @@ pub fn create_tray_menu(
     let is_proxy_running = futures::executor::block_on(app_state.proxy_service.is_running());
 
     // 每个应用类型折叠为子菜单，避免供应商过多时菜单过长
-    for section in TRAY_SECTIONS.iter() {
+    for section in TRAY_SECTIONS.iter().filter(|_| SHOW_PROVIDER_MENUS) {
         if !visible_apps.is_visible(&section.app_type) {
             continue;
         }
@@ -859,12 +862,13 @@ pub fn create_tray_menu(
     {
         use crate::services::profile::ProfileScope;
 
-        let any_scope_visible = ProfileScope::ALL.iter().any(|scope| {
-            scope
-                .apps()
-                .iter()
-                .any(|app_type| visible_apps.is_visible(app_type))
-        });
+        let any_scope_visible = SHOW_PROVIDER_MENUS
+            && ProfileScope::ALL.iter().any(|scope| {
+                scope
+                    .apps()
+                    .iter()
+                    .any(|app_type| visible_apps.is_visible(app_type))
+            });
         let profiles = if any_scope_visible {
             app_state.db.get_all_profiles()?
         } else {

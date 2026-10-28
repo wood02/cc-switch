@@ -27,6 +27,20 @@ pub use prompt::import_prompt_from_deeplink;
 pub use provider::{import_provider_from_deeplink, parse_and_merge_config};
 pub use skill::import_skill_from_deeplink;
 
+/// 解析深链接并拒绝供应商导入（供应商切换已从产品中移除）。
+/// 应用入口统一走这里；`parse_deeplink_url` 保持原样供解析测试使用。
+pub fn parse_supported_deeplink_url(
+    url_str: &str,
+) -> Result<DeepLinkImportRequest, crate::error::AppError> {
+    let request = parse_deeplink_url(url_str)?;
+    if request.resource == "provider" {
+        return Err(crate::error::AppError::InvalidInput(
+            "Provider import is not supported".to_string(),
+        ));
+    }
+    Ok(request)
+}
+
 /// Deep link import request model
 ///
 /// Represents a parsed mskills:// URL ready for processing.

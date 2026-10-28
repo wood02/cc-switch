@@ -2798,6 +2798,13 @@
       "disabledWithUsage": "現在は無効ですが、この期間に使用記録があります",
       "estimated": "Codex は明示的な選択と成功した SKILL.md 読み取りから推定します。同じターンの重複読み取りは1回として集計します。",
       "callsTitle": "呼び出し回数",
+      "pluginSkills": "プラグインのスキル",
+      "pluginSkillCount": "{{count}} 個のスキル",
+      "pluginCommandCount": "{{count}} 個のコマンド",
+      "pluginEnabledIn": "{{app}} で有効、クリックで無効化",
+      "pluginDisabledIn": "{{app}} で無効、クリックで有効化",
+      "pluginNotInstalled": "{{app}} に未インストール",
+      "pluginToggled": "更新しました。{{app}} を再起動すると反映されます",
       "enabledCount": "{{count}}個",
       "callCount": "{{count}}回"
     }

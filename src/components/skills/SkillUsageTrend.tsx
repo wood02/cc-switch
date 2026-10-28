@@ -12,7 +12,7 @@ import type {
   SkillUsageSnapshot,
   SkillUsageSummary,
 } from "@/lib/api/skills";
-import { APP_ICON_MAP } from "@/config/appConfig";
+import { APP_ICON_MAP, SKILLS_APP_IDS } from "@/config/appConfig";
 import { skillUsageColor } from "@/lib/skillUsage";
 import { cn } from "@/lib/utils";
 
@@ -32,9 +32,11 @@ export function SkillUsageTrend({
   status,
 }: Props) {
   const { t } = useTranslation();
-  const visible = records.filter(
-    (record) => !hoveredApp || record.app === hoveredApp,
-  );
+  const visible = records
+    .filter((record) => !hoveredApp || record.app === hoveredApp)
+    .sort(
+      (a, b) => SKILLS_APP_IDS.indexOf(a.app) - SKILLS_APP_IDS.indexOf(b.app),
+    );
   const count = visible.reduce((sum, record) => sum + record.count, 0);
   const totals = boundaries
     .slice(1)
@@ -45,8 +47,8 @@ export function SkillUsageTrend({
   const unsupported = hoveredApp && !(hoveredApp in skillUsageColor);
   const usageAvailable = !unsupported && status?.completed && !status.error;
   const showCount = !unsupported && (count > 0 || usageAvailable);
-  const tooltipApps = Object.keys(skillUsageColor).filter(
-    (app) => !hoveredApp || app === hoveredApp,
+  const tooltipApps = SKILLS_APP_IDS.filter(
+    (app) => app in skillUsageColor && (!hoveredApp || app === hoveredApp),
   ) as (keyof typeof skillUsageColor)[];
   const formatTime = (at: number) =>
     new Date(at * 1000).toLocaleTimeString(undefined, {
@@ -161,26 +163,28 @@ export function SkillUsageTrend({
                       className="min-w-40 space-y-1.5 !animate-none"
                     >
                       <p className="font-medium">{periodLabel}</p>
-                      {details.map(({ app, count }) => (
-                        <div
-                          key={app}
-                          className="flex items-center justify-between gap-4"
-                        >
-                          <span className="inline-flex items-center gap-1.5">
-                            <span
-                              aria-hidden="true"
-                              className={cn(
-                                "h-1.5 w-1.5 rounded-full",
-                                skillUsageColor[app],
-                              )}
-                            />
-                            {APP_ICON_MAP[app].label}
-                          </span>
-                          <span className="tabular-nums">
-                            {count} {t("skills.usage.times")}
-                          </span>
-                        </div>
-                      ))}
+                      <div className="flex flex-col-reverse gap-1.5">
+                        {details.map(({ app, count }) => (
+                          <div
+                            key={app}
+                            className="flex items-center justify-between gap-4"
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  "h-1.5 w-1.5 rounded-full",
+                                  skillUsageColor[app],
+                                )}
+                              />
+                              {APP_ICON_MAP[app].label}
+                            </span>
+                            <span className="tabular-nums">
+                              {count} {t("skills.usage.times")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                       <p className="border-t border-primary-foreground/20 pt-1.5 tabular-nums">
                         {totalLabel}
                       </p>
