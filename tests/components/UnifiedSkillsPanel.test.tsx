@@ -432,7 +432,7 @@ describe("UnifiedSkillsPanel", () => {
       "text-zinc-700",
     );
     expect(document.querySelector('[data-usage-app="claude"]')).toHaveClass(
-      "bg-black",
+      "bg-[#D97757]",
       "text-white",
     );
 
