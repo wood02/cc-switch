@@ -139,6 +139,15 @@ export interface SkillUsageSnapshot {
   filesTotal: number;
   error: string | null;
   records: SkillUsageSummary[];
+  /** Installed plugin Skills (`plugin:skill`) to description, including unused ones */
+  pluginSkills?: Record<string, string>;
+  /** Plugin name to description */
+  pluginDescriptions?: Record<string, string>;
+  /** Plugin name to the agents and marketplaces it is installed from */
+  pluginSources?: Record<
+    string,
+    { app: AppId; marketplace: string; version: string; commands: number }[]
+  >;
 }
 
 /** 存储位置迁移结果 */

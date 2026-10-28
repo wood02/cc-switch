@@ -34,7 +34,10 @@ export const skillUsageColor = {
 
 export interface SkillUsageData {
   snapshots?: Record<SkillUsageRange, SkillUsageSnapshot>;
-  status: Omit<SkillUsageSnapshot, "records">;
+  status: Omit<
+    SkillUsageSnapshot,
+    "records" | "pluginSkills" | "pluginDescriptions" | "pluginSources"
+  >;
 }
 
 export function settleSkillUsage(

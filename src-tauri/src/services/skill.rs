@@ -3227,7 +3227,7 @@ impl SkillService {
     }
 
     /// 静态方法：解析技能元数据
-    fn parse_skill_metadata_static(path: &Path) -> Result<SkillMetadata> {
+    pub(crate) fn parse_skill_metadata_static(path: &Path) -> Result<SkillMetadata> {
         let content = fs::read_to_string(path)?;
         let content = content.trim_start_matches('\u{feff}');
 

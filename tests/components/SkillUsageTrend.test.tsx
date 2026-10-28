@@ -91,7 +91,7 @@ describe("SkillUsageTrend", () => {
     });
     render(
       <SkillUsageTrend
-        records={[record("claude", 2), record("codex", 3)]}
+        records={[record("codex", 3), record("claude", 2)]}
         range="day"
         boundaries={boundaries}
         hoveredApp={null}
@@ -107,7 +107,13 @@ describe("SkillUsageTrend", () => {
     expect(buckets[0].querySelector("[data-usage-bar]")).toHaveClass(
       "rounded-[3px]",
       "overflow-hidden",
+      "flex-col-reverse",
     );
+    expect(
+      [...buckets[0].querySelectorAll("[data-usage-segment]")].map((segment) =>
+        segment.getAttribute("data-usage-segment"),
+      ),
+    ).toEqual(["claude", "codex"]);
     expect(buckets[1].querySelector("[data-usage-bar]")).toHaveStyle({
       height: "2px",
     });
@@ -117,6 +123,10 @@ describe("SkillUsageTrend", () => {
     expect(details).toHaveTextContent("00:00–02:00");
     expect(details).toHaveTextContent("Claude");
     expect(details).toHaveTextContent("Codex");
+    const claudeRow = within(details).getByText("Claude").closest("div");
+    const codexRow = within(details).getByText("Codex").closest("div");
+    expect(claudeRow?.parentElement).toHaveClass("flex-col-reverse");
+    expect(claudeRow?.nextElementSibling).toBe(codexRow);
     expect(details).toHaveTextContent("skills.usage.bucketTotal");
     await user.unhover(buckets[0]);
     await user.hover(buckets[1]);

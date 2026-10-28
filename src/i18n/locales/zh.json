@@ -2798,6 +2798,13 @@
       "disabledWithUsage": "当前已关闭，但所选时间范围内有使用记录",
       "estimated": "Codex 为估算：依据显式选择和成功读取 SKILL.md 的记录，同一回合重复读取合并统计。",
       "callsTitle": "调用次数",
+      "pluginSkills": "插件技能",
+      "pluginSkillCount": "{{count}} 个技能",
+      "pluginCommandCount": "{{count}} 个命令",
+      "pluginEnabledIn": "已在 {{app}} 启用，点击禁用",
+      "pluginDisabledIn": "已在 {{app}} 禁用，点击启用",
+      "pluginNotInstalled": "{{app}} 未安装此插件",
+      "pluginToggled": "已更新，重启 {{app}} 后生效",
       "enabledCount": "{{count}}个",
       "callCount": "{{count}}次"
     }

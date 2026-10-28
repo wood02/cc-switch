@@ -80,7 +80,9 @@ export const AppToggleGroup: React.FC<AppToggleGroupProps> = ({
                   enabled
                     ? app === "codex"
                       ? "bg-blue-500 text-white"
-                      : "bg-black text-white"
+                      : app === "claude"
+                        ? "bg-[#D97757] text-white"
+                        : "bg-black text-white"
                     : "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100",
                 )}
               >

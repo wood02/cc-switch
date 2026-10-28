@@ -2799,6 +2799,13 @@
       "disabledWithUsage": "目前已關閉，但所選時間範圍內有使用記錄",
       "estimated": "Codex 為估算：依據明確選擇與成功讀取 SKILL.md 的記錄，同一回合重複讀取合併統計。",
       "callsTitle": "呼叫次數",
+      "pluginSkills": "外掛技能",
+      "pluginSkillCount": "{{count}} 個技能",
+      "pluginCommandCount": "{{count}} 個命令",
+      "pluginEnabledIn": "已在 {{app}} 啟用，點擊停用",
+      "pluginDisabledIn": "已在 {{app}} 停用，點擊啟用",
+      "pluginNotInstalled": "{{app}} 未安裝此外掛",
+      "pluginToggled": "已更新，重新啟動 {{app}} 後生效",
       "enabledCount": "{{count}}個",
       "callCount": "{{count}}次"
     }

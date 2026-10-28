@@ -62,6 +62,8 @@ const bulkToggleSkillAppMock = vi.fn();
 const checkUpdatesMock = vi.fn();
 const updateSkillMock = vi.fn();
 const refetchSkillBackupsMock = vi.fn();
+const togglePluginMock = vi.fn();
+let pluginStatesMock: Record<string, Record<string, boolean>> = {};
 const { toastErrorMock, toastSuccessMock, toastWarningMock } = vi.hoisted(
   () => ({
     toastErrorMock: vi.fn(),
@@ -113,6 +115,8 @@ vi.mock("@/hooks/useSkills", () => ({
       isError: false,
     };
   },
+  usePluginStates: () => ({ data: pluginStatesMock }),
+  useTogglePlugin: () => ({ mutate: togglePluginMock, isPending: false }),
   useInstalledSkills: () => ({
     data: installedSkillsMock,
     isLoading: false,
@@ -459,6 +463,97 @@ describe("UnifiedSkillsPanel", () => {
         enabled: true,
       }),
     );
+  });
+
+  it("lists used plugin Skills separately and counts them in the totals", async () => {
+    installedSkillsMock = [makeInstalledSkill()];
+    usageDataMock.day!.records = [
+      usageRecord("alpha-skill", 2),
+      usageRecord("ponytail:ponytail-review", 5),
+    ];
+    usageDataMock.day!.pluginSkills = {
+      "ponytail:ponytail-gain": "Show measured savings",
+      "ponytail:ponytail-review": "",
+      "karpathy-skills:karpathy-guidelines": "Fewer LLM mistakes",
+    };
+    usageDataMock.day!.pluginDescriptions = { ponytail: "Lazy senior dev" };
+    usageDataMock.day!.pluginSources = {
+      ponytail: [
+        {
+          app: "claude",
+          marketplace: "ponytail",
+          version: "1.0.0",
+          commands: 2,
+        },
+        {
+          app: "codex",
+          marketplace: "ponytail",
+          version: "1.0.0",
+          commands: 0,
+        },
+      ],
+    };
+    pluginStatesMock = {
+      claude: { "ponytail@ponytail": true },
+      codex: { "ponytail@ponytail": false },
+    };
+    const user = userEvent.setup();
+    renderPanel();
+    expect(screen.getByText("skills.usage.pluginSkills")).toBeInTheDocument();
+    const group = screen.getByRole("button", { name: /^ponytail/ });
+    expect(group).toHaveTextContent(
+      "ponytail · 1.0.0 · skills.usage.pluginSkillCount · skills.usage.pluginCommandCount",
+    );
+    // Each agent icon toggles the plugin in that agent's own config.
+    expect(screen.getByTitle("skills.usage.pluginEnabledIn")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(screen.getByTitle("skills.usage.pluginDisabledIn"));
+    expect(togglePluginMock).toHaveBeenCalledWith(
+      { app: "codex", id: "ponytail@ponytail", enabled: true },
+      expect.anything(),
+    );
+    expect(group).toHaveAttribute("aria-expanded", "false");
+    // A one-Skill plugin is a flat row named after its Skill, with no toggle.
+    expect(screen.getByText("karpathy-guidelines")).toBeInTheDocument();
+    expect(screen.getByText("karpathy-skills")).toBeInTheDocument();
+    expect(screen.getByText("Fewer LLM mistakes")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^karpathy/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("ponytail-gain")).not.toBeInTheDocument();
+    await user.click(group);
+    expect(screen.getByText("ponytail-review")).toBeInTheDocument();
+    expect(screen.getByText("ponytail-gain")).toBeInTheDocument();
+    expect(screen.getByText("Lazy senior dev")).toBeInTheDocument();
+    expect(screen.getByText("Show measured savings")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /skills\.usage\.today/ }),
+    ).toHaveTextContent("7");
+    await user.type(
+      screen.getByRole("textbox", { name: "skills.installedSearchAriaLabel" }),
+      "alpha",
+    );
+    expect(
+      screen.queryByText("skills.usage.pluginSkills"),
+    ).not.toBeInTheDocument();
+    await user.clear(
+      screen.getByRole("textbox", { name: "skills.installedSearchAriaLabel" }),
+    );
+    await user.click(
+      screen.getByRole("combobox", { name: "skills.filter.repo" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "skills.usage.pluginSkills（3）" }),
+    );
+    expect(screen.queryByText("alpha-skill")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("skills.noInstalledSearchResults"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^ponytail/ }),
+    ).toBeInTheDocument();
   });
 
   it("does not label a skill unused while the first background scan is unfinished", () => {
