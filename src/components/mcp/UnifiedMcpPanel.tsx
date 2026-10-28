@@ -11,6 +11,7 @@ import {
   useDeleteMcpServer,
   useImportMcpFromApps,
 } from "@/hooks/useMcp";
+import { useViewState } from "@/hooks/useViewState";
 import type { McpServer } from "@/types";
 import type { AppId } from "@/lib/api/types";
 import McpFormModal from "./McpFormModal";
@@ -67,7 +68,7 @@ const UnifiedMcpPanel = React.forwardRef<
   const { t } = useTranslation();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useViewState("mcp.search", "");
   const [writePending, setWritePending] = useState(false);
   const writeLockRef = React.useRef(false);
   const [confirmDialog, setConfirmDialog] = useState<{
